@@ -87,12 +87,12 @@ function App() {
       recipient="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
       onSuccess={(txHash) => console.log('Payment successful:', txHash)}
       onError={(error) => console.error('Payment failed:', error)}
-      projectId="your-walletconnect-project-id"
-      chains={[1]} // Ethereum mainnet
     />
   )
 }
 ```
+
+**Note**: Project ID and chains are configured globally in `config/appkit.ts`. No need to pass them as props.
 
 ### Props
 
