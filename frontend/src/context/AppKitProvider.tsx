@@ -17,10 +17,24 @@ const metadata = {
 }
 
 // Initialize AppKit outside the component render cycle
-if (projectId && projectId.trim() !== '') {
+// Use a dummy project ID if not provided to prevent blank screen
+const effectiveProjectId = projectId && projectId.trim() !== '' && projectId !== 'your-project-id-here' 
+  ? projectId 
+  : '0000000000000000000000000000000000000000000000000000000000000000' // Dummy fallback
+
+if (projectId === 'your-project-id-here' || !projectId || projectId.trim() === '') {
+  console.error(
+    '⚠️ IMPORTANT: WalletConnect Project ID is missing!\n' +
+    'Please set VITE_WALLETCONNECT_PROJECT_ID in your .env file.\n' +
+    'Get your Project ID from https://cloud.walletconnect.com\n' +
+    'The app will load but wallet connection will not work.'
+  )
+}
+
+try {
   createAppKit({
     adapters: [wagmiAdapter],
-    projectId: projectId,
+    projectId: effectiveProjectId,
     networks: networks,
     defaultNetwork: mainnet,
     metadata,
@@ -28,12 +42,8 @@ if (projectId && projectId.trim() !== '') {
       analytics: true, // Optional: enable analytics
     },
   })
-} else {
-  console.warn(
-    '⚠️ AppKit not initialized: Project ID is missing.\n' +
-    'Please set VITE_WALLETCONNECT_PROJECT_ID in your .env file.\n' +
-    'Get your Project ID from https://cloud.walletconnect.com'
-  )
+} catch (error) {
+  console.error('Failed to initialize AppKit:', error)
 }
 
 export default function AppKitProvider({ children }: { children: ReactNode }) {
