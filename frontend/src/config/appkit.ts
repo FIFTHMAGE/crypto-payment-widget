@@ -6,9 +6,14 @@ import type { Chain } from 'viem'
 // Read Project ID from environment variables
 export const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || import.meta.env.VITE_PROJECT_ID
 
+// Use a fallback dummy ID to prevent crashes
+const effectiveProjectId = projectId && projectId !== 'your-project-id-here' 
+  ? projectId 
+  : '0000000000000000000000000000000000000000000000000000000000000000'
+
 // Ensure Project ID is defined
-if (!projectId) {
-  console.warn('VITE_WALLETCONNECT_PROJECT_ID or VITE_PROJECT_ID is not defined. Please set it in .env file')
+if (!projectId || projectId === 'your-project-id-here') {
+  console.warn('⚠️ VITE_WALLETCONNECT_PROJECT_ID is not configured. Using dummy ID. Wallet connection will not work.')
 }
 
 // Define supported networks
@@ -17,9 +22,9 @@ export const networks: [Chain, ...Chain[]] = [mainnet, arbitrum, base, polygon]
 // Create the Wagmi adapter instance
 // Note: Project ID is required for WalletConnect to work properly
 export const wagmiAdapter = new WagmiAdapter({
-  storage: createStorage(),
+  storage: createStorage({ storage: typeof window !== 'undefined' ? window.localStorage : undefined }),
   ssr: false, // Vite doesn't need SSR
-  projectId: projectId || '', // Empty string as fallback (will show warning)
+  projectId: effectiveProjectId,
   networks,
 })
 
