@@ -4,11 +4,22 @@ A drop-in crypto payment widget using WalletConnect SDK for merchant sites or ev
 
 ## Features
 
+### Simple Payments
 - 🔗 **Reown AppKit Integration** - Connect to 300+ crypto wallets via WalletConnect
 - 🎯 **Wagmi Integration** - Modern React hooks for Ethereum interactions
 - 💰 **Easy Payment Flow** - Simple "Pay with Wallet" button
 - 📊 **Transaction Logging** - Automatic backend transaction logging
-- 🎨 **Modern UI** - Beautiful, responsive design
+- ⚡ **Instant Transfers** - Direct wallet-to-wallet payments
+
+### Smart Contract Payments
+- 🔐 **Escrow Payments** - Time-locked or manually released payments
+- 💸 **Split Payments** - Pay multiple recipients in one transaction
+- 📈 **Payment Tracking** - On-chain payment history and statistics
+- 🛡️ **Secure** - Audited OpenZeppelin contracts
+- 💎 **Platform Fees** - Configurable fee system (0.25% default)
+
+### General
+- 🎨 **Modern UI** - Beautiful, responsive design with Tailwind CSS
 - ⚡ **TypeScript** - Fully typed for better development experience
 - 🔒 **Secure** - Transaction signing through WalletConnect
 
