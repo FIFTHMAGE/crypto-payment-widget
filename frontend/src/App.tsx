@@ -1,7 +1,11 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import PayWithWallet from './components/PayWithWallet'
+import SmartPayment from './components/SmartPayment'
+
+type PaymentType = 'simple' | 'smart'
 
 function App() {
+  const [paymentType, setPaymentType] = useState<PaymentType>('simple')
   const [amount, setAmount] = useState('0.01')
   const [recipient, setRecipient] = useState('0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb')
   const [lastTxHash, setLastTxHash] = useState<string | null>(null)
@@ -25,18 +29,52 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">
-              Crypto Payment Widget
-            </h1>
-            <p className="text-gray-600">
-              Secure payments using WalletConnect
-            </p>
-          </div>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            Crypto Payment Widget
+          </h1>
+          <p className="text-gray-600">
+            Secure payments using WalletConnect & Smart Contracts
+          </p>
+        </div>
 
-          <div className="space-y-6">
+        {/* Payment Type Selector */}
+        <div className="flex justify-center gap-4 mb-8">
+          <button
+            onClick={() => setPaymentType('simple')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+              paymentType === 'simple'
+                ? 'bg-white text-primary-600 shadow-lg scale-105'
+                : 'bg-white/50 text-gray-600 hover:bg-white/80'
+            }`}
+          >
+            Simple Payment
+          </button>
+          <button
+            onClick={() => setPaymentType('smart')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+              paymentType === 'smart'
+                ? 'bg-white text-primary-600 shadow-lg scale-105'
+                : 'bg-white/50 text-gray-600 hover:bg-white/80'
+            }`}
+          >
+            Smart Contract
+          </button>
+        </div>
+
+        {paymentType === 'simple' ? (
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Simple Wallet Payment
+              </h2>
+              <p className="text-gray-600">
+                Direct wallet-to-wallet transfers
+              </p>
+            </div>
+
+            <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Amount (ETH)
@@ -104,16 +142,43 @@ function App() {
             )}
           </div>
 
-          <div className="mt-8 pt-8 border-t border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              How it works
-            </h2>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
-              <li>Click "Pay with Wallet" to connect your wallet</li>
-              <li>Scan the QR code with your wallet app</li>
-              <li>Review and approve the transaction</li>
-              <li>Transaction is automatically logged to the backend</li>
-            </ol>
+            <div className="mt-8 pt-8 border-t border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                How it works
+              </h2>
+              <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
+                <li>Click "Pay with Wallet" to connect your wallet</li>
+                <li>Scan the QR code with your wallet app</li>
+                <li>Review and approve the transaction</li>
+                <li>Transaction is automatically logged to the backend</li>
+              </ol>
+            </div>
+          </div>
+        ) : (
+          <SmartPayment />
+        )}
+
+        <div className="mt-8 bg-white/80 rounded-xl p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Features</h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <h4 className="font-semibold text-gray-800">Simple Payment</h4>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>✓ Direct wallet transfers</li>
+                <li>✓ No smart contract needed</li>
+                <li>✓ Lower gas fees</li>
+                <li>✓ Instant transactions</li>
+              </ul>
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-semibold text-gray-800">Smart Contract</h4>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>✓ Escrow payments</li>
+                <li>✓ Split payments</li>
+                <li>✓ Payment tracking</li>
+                <li>✓ Platform fees (0.25%)</li>
+              </ul>
+            </div>
           </div>
         </div>
 

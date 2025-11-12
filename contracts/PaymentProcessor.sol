@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -74,7 +74,7 @@ contract PaymentProcessor is ReentrancyGuard, Ownable {
     event PaymentRefunded(bytes32 indexed paymentId, address indexed payer, uint256 amount);
     event PlatformFeeUpdated(uint256 newFee);
 
-    constructor(address _feeCollector) {
+    constructor(address _feeCollector) Ownable(msg.sender) {
         feeCollector = _feeCollector;
     }
 
