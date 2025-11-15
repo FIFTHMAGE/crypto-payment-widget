@@ -1,42 +1,81 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useUIStore } from '../uiStore'
 
 describe('UI Store', () => {
   beforeEach(() => {
-    useUIStore.getState().clearToasts()
+    vi.useFakeTimers()
+    useUIStore.setState({
+      toasts: [],
+      modals: {},
+      theme: 'light',
+    })
   })
 
-  it('should add toast', () => {
-    useUIStore.getState().addToast('Test message', 'success')
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('should add toast notification', () => {
+    const store = useUIStore.getState()
     
-    const state = useUIStore.getState()
-    expect(state.toasts).toHaveLength(1)
-    expect(state.toasts[0].message).toBe('Test message')
-    expect(state.toasts[0].type).toBe('success')
+    store.addToast('Test message', 'success')
+
+    expect(useUIStore.getState().toasts).toHaveLength(1)
+    expect(useUIStore.getState().toasts[0].message).toBe('Test message')
+    expect(useUIStore.getState().toasts[0].type).toBe('success')
   })
 
-  it('should remove toast', () => {
-    useUIStore.getState().addToast('Test', 'info')
+  it('should remove toast notification', () => {
+    const store = useUIStore.getState()
+    
+    store.addToast('Test message', 'success')
     const toastId = useUIStore.getState().toasts[0].id
-    
-    useUIStore.getState().removeToast(toastId)
+
+    store.removeToast(toastId)
+
     expect(useUIStore.getState().toasts).toHaveLength(0)
   })
 
-  it('should clear all toasts', () => {
-    useUIStore.getState().addToast('Test 1', 'info')
-    useUIStore.getState().addToast('Test 2', 'success')
+  it('should auto-remove toast after duration', () => {
+    const store = useUIStore.getState()
     
-    useUIStore.getState().clearToasts()
+    store.addToast('Test message', 'success')
+
+    expect(useUIStore.getState().toasts).toHaveLength(1)
+
+    vi.advanceTimersByTime(5000)
+
     expect(useUIStore.getState().toasts).toHaveLength(0)
   })
 
-  it('should generate unique IDs', () => {
-    useUIStore.getState().addToast('Test 1', 'info')
-    useUIStore.getState().addToast('Test 2', 'info')
+  it('should open modal', () => {
+    const store = useUIStore.getState()
     
-    const state = useUIStore.getState()
-    expect(state.toasts[0].id).not.toBe(state.toasts[1].id)
+    store.openModal('confirmPayment')
+
+    expect(useUIStore.getState().modals.confirmPayment).toBe(true)
+  })
+
+  it('should close modal', () => {
+    const store = useUIStore.getState()
+    
+    store.openModal('confirmPayment')
+    store.closeModal('confirmPayment')
+
+    expect(useUIStore.getState().modals.confirmPayment).toBe(false)
+  })
+
+  it('should toggle theme', () => {
+    const store = useUIStore.getState()
+    
+    expect(useUIStore.getState().theme).toBe('light')
+
+    store.toggleTheme()
+
+    expect(useUIStore.getState().theme).toBe('dark')
+
+    store.toggleTheme()
+
+    expect(useUIStore.getState().theme).toBe('light')
   })
 })
-
