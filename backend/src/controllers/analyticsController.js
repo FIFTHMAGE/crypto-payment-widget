@@ -1,55 +1,118 @@
-import { transactionService } from '../services/transactionService.js'
+import {
+  getTransactionAnalytics,
+  getVolumeByToken,
+  getUserAnalytics,
+  getTimeSeriesData,
+  getPlatformMetrics,
+} from '../services/analyticsService.js'
+import { successResponse, errorResponse } from '../utils/responseFormatter.js'
+import logger from '../utils/logger.js'
 
-export const getAnalytics = async (req, res, next) => {
+/**
+ * @route GET /api/v1/analytics/transactions
+ * @desc Get transaction analytics
+ */
+export const getTransactionAnalyticsController = async (req, res, next) => {
   try {
-    const stats = await transactionService.getStats()
-    
-    // Calculate additional metrics
-    const transactions = await transactionService.findAll({ limit: 1000 })
-    
-    const totalVolume = transactions.items.reduce((sum, tx) => {
-      return sum + parseFloat(tx.amount || 0)
-    }, 0)
+    const { timeRange = '24h' } = req.query
 
-    const avgTransaction = transactions.total > 0 
-      ? totalVolume / transactions.total 
-      : 0
+    const analytics = getTransactionAnalytics(timeRange)
 
-    const analytics = {
-      ...stats,
-      totalVolume: totalVolume.toFixed(4),
-      averageTransaction: avgTransaction.toFixed(4),
-      successRate: stats.total > 0 
-        ? ((stats.confirmed / stats.total) * 100).toFixed(2) 
-        : 0,
-    }
-
-    res.json({
-      success: true,
-      data: analytics,
-    })
+    res.json(
+      successResponse({
+        analytics,
+      })
+    )
   } catch (error) {
+    logger.error('Error in getTransactionAnalyticsController:', error)
     next(error)
   }
 }
 
-export const getTransactionsByStatus = async (req, res, next) => {
+/**
+ * @route GET /api/v1/analytics/volume
+ * @desc Get volume analytics by token
+ */
+export const getVolumeAnalyticsController = async (req, res, next) => {
   try {
-    const { status } = req.params
-    const transactions = await transactionService.findAll({ limit: 1000 })
-    
-    const filtered = transactions.items.filter(tx => tx.status === status)
+    const volumeData = getVolumeByToken()
 
-    res.json({
-      success: true,
-      data: {
-        status,
-        count: filtered.length,
-        transactions: filtered,
-      },
-    })
+    res.json(
+      successResponse({
+        volumeByToken: volumeData,
+      })
+    )
   } catch (error) {
+    logger.error('Error in getVolumeAnalyticsController:', error)
     next(error)
   }
 }
 
+/**
+ * @route GET /api/v1/analytics/users
+ * @desc Get user analytics
+ */
+export const getUserAnalyticsController = async (req, res, next) => {
+  try {
+    const userAnalytics = getUserAnalytics()
+
+    res.json(
+      successResponse({
+        users: userAnalytics,
+      })
+    )
+  } catch (error) {
+    logger.error('Error in getUserAnalyticsController:', error)
+    next(error)
+  }
+}
+
+/**
+ * @route GET /api/v1/analytics/timeseries
+ * @desc Get time series data
+ */
+export const getTimeSeriesController = async (req, res, next) => {
+  try {
+    const { interval = 'hour', points = 24 } = req.query
+
+    const timeSeriesData = getTimeSeriesData(interval, parseInt(points))
+
+    res.json(
+      successResponse({
+        timeSeries: timeSeriesData,
+        interval,
+        points: parseInt(points),
+      })
+    )
+  } catch (error) {
+    logger.error('Error in getTimeSeriesController:', error)
+    next(error)
+  }
+}
+
+/**
+ * @route GET /api/v1/analytics/platform
+ * @desc Get platform metrics
+ */
+export const getPlatformMetricsController = async (req, res, next) => {
+  try {
+    const metrics = getPlatformMetrics()
+
+    res.json(
+      successResponse({
+        metrics,
+      })
+    )
+  } catch (error) {
+    logger.error('Error in getPlatformMetricsController:', error)
+    next(error)
+  }
+}
+
+export default {
+  getTransactionAnalyticsController,
+  getVolumeAnalyticsController,
+  getUserAnalyticsController,
+  getTimeSeriesController,
+  getPlatformMetricsController,
+}
