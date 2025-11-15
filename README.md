@@ -89,13 +89,13 @@ npm run build
 ### Basic Usage
 
 ```tsx
-import PayWithWallet from './components/PayWithWallet'
+import { SimplePayment } from './features/payment'
 
 function App() {
   return (
-    <PayWithWallet
-      amount="0.01"
-      recipient="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+    <SimplePayment
+      defaultAmount="0.01"
+      defaultRecipient="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
       onSuccess={(txHash) => console.log('Payment successful:', txHash)}
       onError={(error) => console.error('Payment failed:', error)}
     />
@@ -155,17 +155,32 @@ Verify a transaction (optional).
 .
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   │   └── PayWithWallet.tsx    # Main payment widget component
-│   │   ├── utils/
-│   │   │   └── walletConnect.ts     # WalletConnect service
-│   │   ├── App.tsx                  # Demo app
-│   │   └── main.tsx                 # Entry point
+│   │   ├── components/          # Reusable UI components
+│   │   │   ├── ui/             # Base UI components (Button, Card, Input, etc.)
+│   │   │   ├── layout/         # Layout components (Header, Footer, PageLayout)
+│   │   │   └── common/         # Common domain components (AddressDisplay, etc.)
+│   │   ├── features/           # Feature-based modules
+│   │   │   ├── payment/        # Payment feature (components, hooks, types)
+│   │   │   └── wallet/         # Wallet feature (components, hooks, types)
+│   │   ├── lib/                # Shared utilities and helpers
+│   │   │   ├── constants/      # Application constants
+│   │   │   ├── types/          # TypeScript type definitions
+│   │   │   ├── utils/          # Utility functions
+│   │   │   ├── hooks/          # Custom React hooks
+│   │   │   └── config/         # Configuration utilities
+│   │   ├── services/           # API and blockchain services
+│   │   ├── store/              # State management (Zustand)
+│   │   ├── config/             # App configuration
+│   │   ├── context/            # React contexts
+│   │   ├── App.tsx             # Main application component
+│   │   └── main.tsx            # Application entry point
 │   └── package.json
 ├── backend/
 │   ├── src/
-│   │   └── server.js                # Express server
+│   │   └── server.js           # Express server (to be refactored)
 │   └── package.json
+├── contracts/
+│   └── PaymentProcessor.sol   # Smart contract
 └── package.json
 ```
 
