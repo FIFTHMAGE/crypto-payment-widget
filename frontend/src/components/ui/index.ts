@@ -10,4 +10,6 @@ export * from './Badge'
 export * from './Alert'
 export * from './Select'
 export * from './Tabs'
+export * from './Textarea'
+export * from './Checkbox'
 
