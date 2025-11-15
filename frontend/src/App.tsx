@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { PageLayout } from './components/layout'
 import { Card, Button } from './components/ui'
 import { Toast } from './components/ui/Toast'
-import { SimplePayment } from './features/payment'
+import { SimplePayment, SmartContractPayment } from './features/payment'
 import { WalletConnect, WalletInfo, NetworkSelector } from './features/wallet'
 import { useUIStore } from './store'
 
@@ -65,14 +65,7 @@ function App() {
               onError={handleError}
             />
           ) : (
-            <Card>
-              <div className="text-center py-12">
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  Smart Contract Payments
-                </h3>
-                <p className="text-gray-600">Coming soon...</p>
-              </div>
-            </Card>
+            <SmartContractPayment />
           )}
 
           {/* Features Overview */}
