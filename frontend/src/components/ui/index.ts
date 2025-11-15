@@ -8,4 +8,6 @@ export * from './Skeleton'
 export * from './Modal'
 export * from './Badge'
 export * from './Alert'
+export * from './Select'
+export * from './Tabs'
 
