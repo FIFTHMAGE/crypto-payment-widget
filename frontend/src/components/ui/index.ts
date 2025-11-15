@@ -6,4 +6,6 @@ export * from './Toast'
 export * from './ErrorBoundary'
 export * from './Skeleton'
 export * from './Modal'
+export * from './Badge'
+export * from './Alert'
 
