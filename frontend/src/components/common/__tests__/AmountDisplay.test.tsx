@@ -3,24 +3,35 @@ import { render, screen } from '../../../test/utils/test-utils'
 import { AmountDisplay } from '../AmountDisplay'
 
 describe('AmountDisplay', () => {
-  it('should display formatted amount', () => {
-    render(<AmountDisplay amount="1.5" />)
-    expect(screen.getByText('1.5')).toBeInTheDocument()
+  it('displays formatted amount', () => {
+    render(<AmountDisplay amount="1234567890000000000" />)
+    expect(screen.getByText(/1\.23/i)).toBeInTheDocument()
   })
 
-  it('should display token symbol', () => {
-    render(<AmountDisplay amount="1.5" symbol="ETH" />)
+  it('shows token symbol', () => {
+    render(<AmountDisplay amount="1000000000000000000" symbol="ETH" />)
     expect(screen.getByText(/ETH/i)).toBeInTheDocument()
   })
 
-  it('should handle large amounts with commas', () => {
-    render(<AmountDisplay amount="1000000.50" />)
-    expect(screen.getByText(/1,000,000.50/)).toBeInTheDocument()
+  it('displays USD value when provided', () => {
+    render(<AmountDisplay amount="1000000000000000000" usdValue={2000} />)
+    expect(screen.getByText(/\$2,000/i)).toBeInTheDocument()
   })
 
-  it('should show USD value when provided', () => {
-    render(<AmountDisplay amount="1.0" usdValue="2000.00" />)
-    expect(screen.getByText(/\$2,000.00/)).toBeInTheDocument()
+  it('handles zero amounts', () => {
+    render(<AmountDisplay amount="0" />)
+    expect(screen.getByText(/0\.00/i)).toBeInTheDocument()
+  })
+
+  it('applies custom decimal places', () => {
+    render(<AmountDisplay amount="1234567890000000000" decimals={4} />)
+    expect(screen.getByText(/1\.2346/i)).toBeInTheDocument()
+  })
+
+  it('applies custom className', () => {
+    const { container } = render(
+      <AmountDisplay amount="1000000000000000000" className="text-green-500" />
+    )
+    expect(container.firstChild).toHaveClass('text-green-500')
   })
 })
-
