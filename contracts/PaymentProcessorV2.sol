@@ -1,114 +1,296 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./Pausable.sol";
-import "./PaymentRegistry.sol";
+import "./base/BasePayment.sol";
+import "./interfaces/IPaymentProcessor.sol";
 
 /**
  * @title PaymentProcessorV2
- * @dev Improved payment processor with registry integration
+ * @notice Modular payment processor with enhanced features
+ * @dev Refactored to use base contracts for better maintainability
  */
-contract PaymentProcessorV2 is Pausable {
-    using SafeERC20 for IERC20;
-
-    PaymentRegistry public registry;
-    uint256 public platformFee;
-    address public feeCollector;
-
-    event DirectPayment(
-        bytes32 indexed paymentId,
-        address indexed payer,
-        address indexed payee,
-        uint256 amount,
-        address token
-    );
-
-    constructor(
-        address _registry,
-        address _feeCollector,
-        uint256 _platformFee
-    ) {
-        registry = PaymentRegistry(_registry);
-        feeCollector = _feeCollector;
-        platformFee = _platformFee;
-    }
+contract PaymentProcessorV2 is BasePayment, IPaymentProcessor {
+    constructor(address feeCollector_) BasePayment(feeCollector_) {}
 
     /**
-     * @dev Process a direct payment with registry
+     * @notice Process a direct payment (ETH or ERC20)
+     * @param payee The recipient address
+     * @param token The token address (address(0) for ETH)
+     * @param amount The payment amount
+     * @param metadata Optional payment metadata
+     * @return paymentId The unique payment identifier
      */
     function processPayment(
         address payee,
         address token,
         uint256 amount,
         string calldata metadata
-    ) external payable whenNotPaused returns (bytes32) {
-        require(payee != address(0), "Invalid payee");
-        require(amount > 0, "Amount must be greater than 0");
+    )
+        external
+        payable
+        override
+        nonReentrant
+        validAddress(payee)
+        validAmount(amount)
+        returns (bytes32)
+    {
+        bytes32 paymentId = _generatePaymentId(msg.sender, payee, amount, _paymentNonce++);
 
-        bytes32 paymentId = keccak256(
-            abi.encodePacked(msg.sender, payee, amount, block.timestamp)
-        );
+        (uint256 netAmount, uint256 fee) = _processPaymentWithFee(token, msg.sender, payee, amount);
 
-        uint256 fee = (amount * platformFee) / 10000;
-        uint256 netAmount = amount - fee;
+        _payments[paymentId] = Payment({
+            payer: msg.sender,
+            payee: payee,
+            amount: amount,
+            token: token,
+            timestamp: block.timestamp,
+            status: PaymentStatus.Completed,
+            metadata: metadata
+        });
 
-        if (token == address(0)) {
-            require(msg.value == amount, "Incorrect ETH amount");
-            (bool success, ) = payee.call{value: netAmount}("");
-            require(success, "ETH transfer failed");
-            
-            if (fee > 0) {
-                (bool feeSuccess, ) = feeCollector.call{value: fee}("");
-                require(feeSuccess, "Fee transfer failed");
-            }
-        } else {
-            IERC20(token).safeTransferFrom(msg.sender, payee, netAmount);
-            if (fee > 0) {
-                IERC20(token).safeTransferFrom(msg.sender, feeCollector, fee);
-            }
-        }
+        _addPaymentId(paymentId);
+        _incrementTotalSent(msg.sender, amount);
+        _incrementTotalReceived(payee, amount);
 
-        // Register payment
-        registry.registerPayment(
-            paymentId,
-            msg.sender,
-            payee,
-            amount,
-            token,
-            PaymentRegistry.PaymentType.Direct,
-            metadata
-        );
-
-        emit DirectPayment(paymentId, msg.sender, payee, amount, token);
+        emit PaymentProcessed(paymentId, msg.sender, payee, amount, token, fee, block.timestamp);
         return paymentId;
     }
 
     /**
-     * @dev Update platform fee (admin only)
+     * @notice Create an escrow payment
+     * @param payee The recipient address
+     * @param token The token address (address(0) for ETH)
+     * @param amount The escrow amount
+     * @param releaseTime The time when escrow can be released
+     * @param metadata Optional escrow metadata
+     * @return escrowId The unique escrow identifier
      */
-    function updatePlatformFee(uint256 newFee) external onlyRole(ADMIN_ROLE) {
-        require(newFee <= 500, "Fee too high");
-        platformFee = newFee;
+    function createEscrow(
+        address payee,
+        address token,
+        uint256 amount,
+        uint256 releaseTime,
+        string calldata metadata
+    )
+        external
+        payable
+        override
+        nonReentrant
+        validAddress(payee)
+        validAmount(amount)
+        futureReleaseTime(releaseTime)
+        returns (bytes32)
+    {
+        bytes32 escrowId = _generateEscrowId(msg.sender, payee, amount, _escrowNonce++);
+
+        _receivePayment(token, msg.sender, amount);
+
+        _escrowPayments[escrowId] = EscrowPayment({
+            payer: msg.sender,
+            payee: payee,
+            amount: amount,
+            token: token,
+            releaseTime: releaseTime,
+            released: false,
+            refunded: false,
+            metadata: metadata
+        });
+
+        emit EscrowCreated(escrowId, msg.sender, payee, amount, releaseTime, token);
+        return escrowId;
     }
 
     /**
-     * @dev Update fee collector (admin only)
+     * @notice Release escrow payment to payee
+     * @param escrowId The escrow identifier
      */
-    function updateFeeCollector(address newCollector) external onlyRole(ADMIN_ROLE) {
-        require(newCollector != address(0), "Invalid address");
-        feeCollector = newCollector;
+    function releaseEscrow(bytes32 escrowId)
+        external
+        override
+        nonReentrant
+        escrowNotProcessed(escrowId)
+        canReleaseEscrow(escrowId)
+    {
+        EscrowPayment storage escrow = _escrowPayments[escrowId];
+        escrow.released = true;
+
+        uint256 fee = _calculateFee(escrow.amount);
+        uint256 netAmount = escrow.amount - fee;
+
+        _transferAsset(escrow.token, escrow.payee, netAmount);
+        if (fee > 0) {
+            _transferAsset(escrow.token, _feeCollector, fee);
+        }
+
+        emit EscrowReleased(escrowId, escrow.payee, netAmount, fee);
     }
 
     /**
-     * @dev Update registry (admin only)
+     * @notice Refund escrow payment to payer
+     * @param escrowId The escrow identifier
      */
-    function updateRegistry(address newRegistry) external onlyRole(ADMIN_ROLE) {
-        require(newRegistry != address(0), "Invalid address");
-        registry = PaymentRegistry(newRegistry);
+    function refundEscrow(bytes32 escrowId)
+        external
+        override
+        nonReentrant
+        escrowNotProcessed(escrowId)
+        onlyPayer(escrowId)
+    {
+        EscrowPayment storage escrow = _escrowPayments[escrowId];
+        escrow.refunded = true;
+
+        _transferAsset(escrow.token, escrow.payer, escrow.amount);
+
+        emit EscrowRefunded(escrowId, escrow.payer, escrow.amount);
     }
 
-    receive() external payable {}
+    /**
+     * @notice Split payment among multiple recipients
+     * @param recipients Array of recipient addresses
+     * @param amounts Array of amounts for each recipient
+     * @param token The token address (address(0) for ETH)
+     * @param metadata Optional payment metadata
+     * @return paymentId The unique payment identifier
+     */
+    function splitPayment(
+        address[] calldata recipients,
+        uint256[] calldata amounts,
+        address token,
+        string calldata metadata
+    )
+        external
+        payable
+        override
+        nonReentrant
+        validArrayLength(recipients.length, amounts.length)
+        nonEmptyArray(recipients.length)
+        returns (bytes32)
+    {
+        _validateAddresses(recipients);
+
+        uint256 totalAmount = 0;
+        for (uint256 i = 0; i < amounts.length; i++) {
+            if (amounts[i] == 0) {
+                revert InvalidAmount(amounts[i]);
+            }
+            totalAmount += amounts[i];
+        }
+
+        if (token == address(0)) {
+            if (msg.value != totalAmount) {
+                revert IncorrectETHAmount(msg.value, totalAmount);
+            }
+        }
+
+        bytes32 paymentId = keccak256(
+            abi.encodePacked(msg.sender, recipients, amounts, block.timestamp, _paymentNonce++)
+        );
+
+        uint256 totalFees = 0;
+        for (uint256 i = 0; i < recipients.length; i++) {
+            uint256 fee = _calculateFee(amounts[i]);
+            uint256 netAmount = amounts[i] - fee;
+            totalFees += fee;
+
+            if (token == address(0)) {
+                _transferAsset(token, recipients[i], netAmount);
+            } else {
+                _transferAssetFrom(token, msg.sender, recipients[i], netAmount);
+            }
+
+            _incrementTotalReceived(recipients[i], amounts[i]);
+        }
+
+        if (totalFees > 0) {
+            if (token == address(0)) {
+                _transferAsset(token, _feeCollector, totalFees);
+            } else {
+                _transferAssetFrom(token, msg.sender, _feeCollector, totalFees);
+            }
+        }
+
+        _incrementTotalSent(msg.sender, totalAmount);
+        emit PaymentProcessed(paymentId, msg.sender, address(0), totalAmount, token, totalFees, block.timestamp);
+        return paymentId;
+    }
+
+    /**
+     * @notice Update platform fee
+     * @param newFee The new fee in basis points (max 500 = 5%)
+     */
+    function updatePlatformFee(uint256 newFee) external onlyOwner validFee(newFee) {
+        uint256 oldFee = _platformFee;
+        _setPlatformFee(newFee);
+        emit PlatformFeeUpdated(oldFee, newFee);
+    }
+
+    /**
+     * @notice Update fee collector address
+     * @param newCollector The new fee collector address
+     */
+    function updateFeeCollector(address newCollector) external onlyOwner validAddress(newCollector) {
+        address oldCollector = _feeCollector;
+        _setFeeCollector(newCollector);
+        emit FeeCollectorUpdated(oldCollector, newCollector);
+    }
+
+    /**
+     * @notice Get payment details
+     * @param paymentId The payment identifier
+     * @return The payment details
+     */
+    function getPayment(bytes32 paymentId) external view override returns (Payment memory) {
+        return _getPayment(paymentId);
+    }
+
+    /**
+     * @notice Get escrow details
+     * @param escrowId The escrow identifier
+     * @return The escrow details
+     */
+    function getEscrow(bytes32 escrowId) external view override returns (EscrowPayment memory) {
+        return _getEscrow(escrowId);
+    }
+
+    /**
+     * @notice Get total number of payments
+     * @return The payment count
+     */
+    function getPaymentCount() external view override returns (uint256) {
+        return _getPaymentCount();
+    }
+
+    /**
+     * @notice Get total received by address
+     * @param account The address to query
+     * @return The total received amount
+     */
+    function getTotalReceived(address account) external view returns (uint256) {
+        return _getTotalReceived(account);
+    }
+
+    /**
+     * @notice Get total sent by address
+     * @param account The address to query
+     * @return The total sent amount
+     */
+    function getTotalSent(address account) external view returns (uint256) {
+        return _getTotalSent(account);
+    }
+
+    /**
+     * @notice Get platform fee
+     * @return The current platform fee in basis points
+     */
+    function getPlatformFee() external view returns (uint256) {
+        return _getPlatformFee();
+    }
+
+    /**
+     * @notice Get fee collector address
+     * @return The current fee collector address
+     */
+    function getFeeCollector() external view returns (address) {
+        return _getFeeCollector();
+    }
 }
-
