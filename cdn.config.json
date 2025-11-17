@@ -1,0 +1,9 @@
+{
+  "provider": "cloudflare",
+  "zones": ["assets.example.com"],
+  "caching": {
+    "static": { "maxAge": 31536000 },
+    "api": { "maxAge": 300 }
+  }
+}
+
