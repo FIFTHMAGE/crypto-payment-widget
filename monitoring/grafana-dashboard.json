@@ -1,0 +1,2 @@
+{"dashboard":{"title":"Payment Widget Metrics","panels":[{"title":"Request Rate","type":"graph"},{"title":"Error Rate","type":"graph"}]},"overwrite":true}
+
