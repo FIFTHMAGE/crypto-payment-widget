@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "npmClient": "npm",
+  "packages": ["frontend", "backend", "contracts"],
+  "command": { "version": { "message": "chore: release v%s" } }
+}
+
