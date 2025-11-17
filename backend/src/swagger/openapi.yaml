@@ -1,0 +1,17 @@
+openapi: 3.0.0
+info:
+  title: Crypto Payment Widget API
+  version: 1.0.0
+paths:
+  /api/v1/payments:
+    get:
+      summary: List payments
+      responses:
+        '200':
+          description: Success
+    post:
+      summary: Create payment
+      responses:
+        '201':
+          description: Created
+
