@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  frontend:
+    build: ./frontend
+    ports: ['5173:5173']
+  backend:
+    build: ./backend
+    ports: ['3000:3000']
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/payments
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+
