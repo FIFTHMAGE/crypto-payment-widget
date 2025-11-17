@@ -1,0 +1,10 @@
+/** Prefetching Strategy */
+export const prefetchRoutes = ['/payment', '/history', '/settings'];
+export const prefetch = (url: string) => {
+  const link = document.createElement('link');
+  link.rel = 'prefetch';
+  link.href = url;
+  document.head.appendChild(link);
+};
+prefetchRoutes.forEach(prefetch);
+
