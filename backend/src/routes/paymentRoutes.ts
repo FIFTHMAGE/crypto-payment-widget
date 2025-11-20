@@ -1,121 +1,65 @@
 /**
- * paymentRoutes - Express routes for payment endpoints
+ * Payment Routes - API routes for payment operations
  * @module routes
  */
 
 import { Router } from 'express';
-import { paymentController } from '../controllers/PaymentController';
-import { validateCreatePayment, validateRequired } from '../middleware/ValidationMiddleware';
+import { PaymentController } from '../controllers/PaymentController';
+import { PaymentRepository } from '../repositories/PaymentRepository';
 
-const router = Router();
+export function createPaymentRoutes(): Router {
+  const router = Router();
+  const paymentRepository = new PaymentRepository();
+  const paymentController = new PaymentController(paymentRepository);
 
-/**
- * @route   POST /api/payments
- * @desc    Create a new payment
- * @access  Private
- */
-router.post('/', validateCreatePayment, (req, res) => {
-  paymentController.createPayment(req, res);
-});
+  /**
+   * @route   POST /api/payments
+   * @desc    Create a new payment
+   * @access  Private
+   */
+  router.post('/', paymentController.createPayment);
 
-/**
- * @route   GET /api/payments/:id
- * @desc    Get payment by ID
- * @access  Private
- */
-router.get('/:id', (req, res) => {
-  paymentController.getPayment(req, res);
-});
+  /**
+   * @route   GET /api/payments/:id
+   * @desc    Get payment by ID
+   * @access  Private
+   */
+  router.get('/:id', paymentController.getPayment);
 
-/**
- * @route   GET /api/payments/tx/:txHash
- * @desc    Get payment by transaction hash
- * @access  Private
- */
-router.get('/tx/:txHash', (req, res) => {
-  paymentController.getPaymentByTxHash(req, res);
-});
+  /**
+   * @route   GET /api/payments
+   * @desc    List payments with filters
+   * @access  Private
+   */
+  router.get('/', paymentController.listPayments);
 
-/**
- * @route   GET /api/payments
- * @desc    List payments with filtering and pagination
- * @access  Private
- */
-router.get('/', (req, res) => {
-  paymentController.listPayments(req, res);
-});
+  /**
+   * @route   PUT /api/payments/:id
+   * @desc    Update payment
+   * @access  Private
+   */
+  router.put('/:id', paymentController.updatePayment);
 
-/**
- * @route   PUT /api/payments/:id
- * @desc    Update payment
- * @access  Private
- */
-router.put('/:id', (req, res) => {
-  paymentController.updatePayment(req, res);
-});
+  /**
+   * @route   DELETE /api/payments/:id
+   * @desc    Delete payment
+   * @access  Private
+   */
+  router.delete('/:id', paymentController.deletePayment);
 
-/**
- * @route   DELETE /api/payments/:id
- * @desc    Delete payment
- * @access  Private
- */
-router.delete('/:id', (req, res) => {
-  paymentController.deletePayment(req, res);
-});
+  /**
+   * @route   GET /api/payments/stats/summary
+   * @desc    Get payment statistics
+   * @access  Private
+   */
+  router.get('/stats/summary', paymentController.getStatistics);
 
-/**
- * @route   GET /api/payments/stats/summary
- * @desc    Get payment statistics
- * @access  Private
- */
-router.get('/stats/summary', (req, res) => {
-  paymentController.getStatistics(req, res);
-});
+  /**
+   * @route   PATCH /api/payments/:id/status
+   * @desc    Update payment status
+   * @access  Private
+   */
+  router.patch('/:id/status', paymentController.updateStatus);
 
-/**
- * @route   GET /api/payments/stats/recent
- * @desc    Get recent payments
- * @access  Private
- */
-router.get('/stats/recent', (req, res) => {
-  paymentController.getRecentPayments(req, res);
-});
-
-/**
- * @route   GET /api/payments/stats/volume
- * @desc    Get payment volume by period
- * @access  Private
- */
-router.get('/stats/volume', (req, res) => {
-  paymentController.getVolumeByPeriod(req, res);
-});
-
-/**
- * @route   GET /api/payments/search
- * @desc    Search payments
- * @access  Private
- */
-router.get('/search', (req, res) => {
-  paymentController.searchPayments(req, res);
-});
-
-/**
- * @route   POST /api/payments/bulk/update-status
- * @desc    Bulk update payment status
- * @access  Private
- */
-router.post('/bulk/update-status', validateRequired('ids', 'status'), (req, res) => {
-  paymentController.bulkUpdateStatus(req, res);
-});
-
-/**
- * @route   GET /api/payments/expired/pending
- * @desc    Get expired pending payments
- * @access  Private
- */
-router.get('/expired/pending', (req, res) => {
-  paymentController.getExpiredPending(req, res);
-});
-
-export default router;
-
+  return router;
+}
