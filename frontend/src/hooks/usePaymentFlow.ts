@@ -1,376 +1,264 @@
 /**
- * usePaymentFlow - Comprehensive payment flow management hook
- * @module hooks/usePaymentFlow
+ * usePaymentFlow - Hook for managing payment flow state
+ * @module hooks
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useAccount, useChainId } from 'wagmi';
+import { useState, useCallback, useEffect } from 'react';
 
 export enum PaymentStep {
-  IDLE = 'idle',
-  INITIALIZING = 'initializing',
-  WALLET_CONNECT = 'wallet_connect',
-  TOKEN_APPROVAL = 'token_approval',
-  CONFIRMING = 'confirming',
+  CONNECT_WALLET = 'connect_wallet',
+  SELECT_TOKEN = 'select_token',
+  ENTER_AMOUNT = 'enter_amount',
+  REVIEW = 'review',
+  APPROVE_TOKEN = 'approve_token',
+  CONFIRM_TRANSACTION = 'confirm_transaction',
   PROCESSING = 'processing',
-  CONFIRMING_TRANSACTION = 'confirming_transaction',
   SUCCESS = 'success',
-  ERROR = 'error'
-}
-
-export enum PaymentType {
-  DIRECT = 'direct',
-  ESCROW = 'escrow',
-  SPLIT = 'split',
-  BATCH = 'batch',
-  SUBSCRIPTION = 'subscription',
-  STREAM = 'stream'
-}
-
-export interface PaymentParams {
-  type: PaymentType;
-  amount: string;
-  token: string;
-  recipient: string;
-  metadata?: Record<string, any>;
-  options?: {
-    requireApproval?: boolean;
-    confirmations?: number;
-    timeout?: number;
-  };
+  ERROR = 'error',
 }
 
 export interface PaymentState {
   step: PaymentStep;
+  recipient: string;
+  token: string;
+  amount: string;
+  metadata?: Record<string, any>;
   transactionHash?: string;
-  paymentId?: string;
-  confirmations: number;
-  error?: Error;
-  retryCount: number;
+  error?: string;
+  isApprovalRequired: boolean;
+  isApproved: boolean;
 }
 
-export interface PaymentFlowHook {
-  // State
-  state: PaymentState;
-  isProcessing: boolean;
-  canRetry: boolean;
-  progress: number;
-
-  // Actions
-  initiate: (params: PaymentParams) => Promise<void>;
-  approve: () => Promise<void>;
-  confirm: () => Promise<void>;
-  retry: () => Promise<void>;
-  cancel: () => void;
-  reset: () => void;
-
-  // Getters
-  getStepDescription: () => string;
-  getEstimatedTime: () => number;
+export interface PaymentFlowCallbacks {
+  onStepChange?: (step: PaymentStep) => void;
+  onComplete?: (txHash: string) => void;
+  onError?: (error: string) => void;
+  onCancel?: () => void;
 }
 
-const MAX_RETRIES = 3;
-const DEFAULT_TIMEOUT = 300000; // 5 minutes
-const CONFIRMATION_POLLING_INTERVAL = 5000; // 5 seconds
-
-export function usePaymentFlow(): PaymentFlowHook {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-
+export function usePaymentFlow(initialState?: Partial<PaymentState>, callbacks?: PaymentFlowCallbacks) {
   const [state, setState] = useState<PaymentState>({
-    step: PaymentStep.IDLE,
-    confirmations: 0,
-    retryCount: 0
+    step: PaymentStep.CONNECT_WALLET,
+    recipient: '',
+    token: '',
+    amount: '',
+    isApprovalRequired: false,
+    isApproved: false,
+    ...initialState,
   });
 
-  const [currentParams, setCurrentParams] = useState<PaymentParams | null>(null);
-  const pollingIntervalRef = useRef<NodeJS.Timeout>();
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const [history, setHistory] = useState<PaymentStep[]>([state.step]);
+  const [canGoBack, setCanGoBack] = useState(false);
 
-  /**
-   * Calculate progress percentage
-   */
-  const progress = useCallback((): number => {
-    const stepProgress: Record<PaymentStep, number> = {
-      [PaymentStep.IDLE]: 0,
-      [PaymentStep.INITIALIZING]: 10,
-      [PaymentStep.WALLET_CONNECT]: 20,
-      [PaymentStep.TOKEN_APPROVAL]: 40,
-      [PaymentStep.CONFIRMING]: 60,
-      [PaymentStep.PROCESSING]: 70,
-      [PaymentStep.CONFIRMING_TRANSACTION]: 85,
-      [PaymentStep.SUCCESS]: 100,
-      [PaymentStep.ERROR]: 0
-    };
+  // Update step and add to history
+  const setStep = useCallback(
+    (step: PaymentStep) => {
+      setState((prev) => ({ ...prev, step }));
+      setHistory((prev) => [...prev, step]);
+      callbacks?.onStepChange?.(step);
+    },
+    [callbacks]
+  );
 
-    let baseProgress = stepProgress[state.step] || 0;
+  // Go to next step
+  const nextStep = useCallback(() => {
+    const stepOrder = [
+      PaymentStep.CONNECT_WALLET,
+      PaymentStep.SELECT_TOKEN,
+      PaymentStep.ENTER_AMOUNT,
+      PaymentStep.REVIEW,
+      PaymentStep.APPROVE_TOKEN,
+      PaymentStep.CONFIRM_TRANSACTION,
+      PaymentStep.PROCESSING,
+      PaymentStep.SUCCESS,
+    ];
 
-    // Add confirmation progress
-    if (state.step === PaymentStep.CONFIRMING_TRANSACTION && currentParams?.options?.confirmations) {
-      const confirmProgress = (state.confirmations / currentParams.options.confirmations) * 15;
-      baseProgress += confirmProgress;
+    const currentIndex = stepOrder.indexOf(state.step);
+    if (currentIndex < stepOrder.length - 1) {
+      // Skip approval step if not required
+      if (stepOrder[currentIndex + 1] === PaymentStep.APPROVE_TOKEN && !state.isApprovalRequired) {
+        setStep(stepOrder[currentIndex + 2] || stepOrder[currentIndex + 1]);
+      } else {
+        setStep(stepOrder[currentIndex + 1]);
+      }
     }
+  }, [state.step, state.isApprovalRequired, setStep]);
 
-    return Math.min(baseProgress, 100);
-  }, [state.step, state.confirmations, currentParams]);
+  // Go to previous step
+  const previousStep = useCallback(() => {
+    if (history.length > 1) {
+      const newHistory = history.slice(0, -1);
+      const previousStep = newHistory[newHistory.length - 1];
+      setState((prev) => ({ ...prev, step: previousStep }));
+      setHistory(newHistory);
+      callbacks?.onStepChange?.(previousStep);
+    }
+  }, [history, callbacks]);
 
-  /**
-   * Get step description
-   */
-  const getStepDescription = useCallback((): string => {
-    const descriptions: Record<PaymentStep, string> = {
-      [PaymentStep.IDLE]: 'Ready to start payment',
-      [PaymentStep.INITIALIZING]: 'Initializing payment...',
-      [PaymentStep.WALLET_CONNECT]: 'Please connect your wallet',
-      [PaymentStep.TOKEN_APPROVAL]: 'Approving token spending...',
-      [PaymentStep.CONFIRMING]: 'Please confirm the transaction in your wallet',
-      [PaymentStep.PROCESSING]: 'Processing payment...',
-      [PaymentStep.CONFIRMING_TRANSACTION]: `Confirming transaction (${state.confirmations}/${currentParams?.options?.confirmations || 12})`,
-      [PaymentStep.SUCCESS]: 'Payment successful!',
-      [PaymentStep.ERROR]: state.error?.message || 'Payment failed'
+  // Update recipient
+  const setRecipient = useCallback((recipient: string) => {
+    setState((prev) => ({ ...prev, recipient }));
+  }, []);
+
+  // Update token
+  const setToken = useCallback((token: string, requiresApproval: boolean = false) => {
+    setState((prev) => ({
+      ...prev,
+      token,
+      isApprovalRequired: requiresApproval,
+      isApproved: !requiresApproval,
+    }));
+  }, []);
+
+  // Update amount
+  const setAmount = useCallback((amount: string) => {
+    setState((prev) => ({ ...prev, amount }));
+  }, []);
+
+  // Update metadata
+  const setMetadata = useCallback((metadata: Record<string, any>) => {
+    setState((prev) => ({ ...prev, metadata }));
+  }, []);
+
+  // Mark token as approved
+  const markAsApproved = useCallback(() => {
+    setState((prev) => ({ ...prev, isApproved: true }));
+  }, []);
+
+  // Set transaction hash
+  const setTransactionHash = useCallback((txHash: string) => {
+    setState((prev) => ({ ...prev, transactionHash: txHash }));
+  }, []);
+
+  // Set error
+  const setError = useCallback(
+    (error: string) => {
+      setState((prev) => ({ ...prev, error }));
+      setStep(PaymentStep.ERROR);
+      callbacks?.onError?.(error);
+    },
+    [setStep, callbacks]
+  );
+
+  // Clear error
+  const clearError = useCallback(() => {
+    setState((prev) => ({ ...prev, error: undefined }));
+  }, []);
+
+  // Reset flow
+  const reset = useCallback(() => {
+    setState({
+      step: PaymentStep.CONNECT_WALLET,
+      recipient: '',
+      token: '',
+      amount: '',
+      isApprovalRequired: false,
+      isApproved: false,
+    });
+    setHistory([PaymentStep.CONNECT_WALLET]);
+  }, []);
+
+  // Complete payment
+  const complete = useCallback(
+    (txHash: string) => {
+      setTransactionHash(txHash);
+      setStep(PaymentStep.SUCCESS);
+      callbacks?.onComplete?.(txHash);
+    },
+    [setTransactionHash, setStep, callbacks]
+  );
+
+  // Cancel payment
+  const cancel = useCallback(() => {
+    callbacks?.onCancel?.();
+    reset();
+  }, [callbacks, reset]);
+
+  // Validation helpers
+  const isStepValid = useCallback(
+    (step: PaymentStep): boolean => {
+      switch (step) {
+        case PaymentStep.CONNECT_WALLET:
+          return true; // Assume wallet is connected if we're past this step
+
+        case PaymentStep.SELECT_TOKEN:
+          return state.token.length > 0;
+
+        case PaymentStep.ENTER_AMOUNT:
+          return parseFloat(state.amount) > 0 && state.recipient.length > 0;
+
+        case PaymentStep.REVIEW:
+          return (
+            state.token.length > 0 &&
+            parseFloat(state.amount) > 0 &&
+            state.recipient.length > 0
+          );
+
+        case PaymentStep.APPROVE_TOKEN:
+          return state.isApproved;
+
+        default:
+          return true;
+      }
+    },
+    [state.token, state.amount, state.recipient, state.isApproved]
+  );
+
+  // Check if can proceed
+  const canProceed = isStepValid(state.step);
+
+  // Update canGoBack
+  useEffect(() => {
+    setCanGoBack(
+      history.length > 1 &&
+        state.step !== PaymentStep.PROCESSING &&
+        state.step !== PaymentStep.SUCCESS &&
+        state.step !== PaymentStep.ERROR
+    );
+  }, [history.length, state.step]);
+
+  // Progress percentage
+  const getProgress = useCallback((): number => {
+    const stepProgress: Record<PaymentStep, number> = {
+      [PaymentStep.CONNECT_WALLET]: 10,
+      [PaymentStep.SELECT_TOKEN]: 25,
+      [PaymentStep.ENTER_AMOUNT]: 40,
+      [PaymentStep.REVIEW]: 60,
+      [PaymentStep.APPROVE_TOKEN]: 70,
+      [PaymentStep.CONFIRM_TRANSACTION]: 80,
+      [PaymentStep.PROCESSING]: 90,
+      [PaymentStep.SUCCESS]: 100,
+      [PaymentStep.ERROR]: 0,
     };
 
-    return descriptions[state.step];
-  }, [state.step, state.confirmations, state.error, currentParams]);
-
-  /**
-   * Get estimated time remaining
-   */
-  const getEstimatedTime = useCallback((): number => {
-    const timings: Record<PaymentStep, number> = {
-      [PaymentStep.IDLE]: 0,
-      [PaymentStep.INITIALIZING]: 5,
-      [PaymentStep.WALLET_CONNECT]: 30,
-      [PaymentStep.TOKEN_APPROVAL]: 30,
-      [PaymentStep.CONFIRMING]: 20,
-      [PaymentStep.PROCESSING]: 30,
-      [PaymentStep.CONFIRMING_TRANSACTION]: 60,
-      [PaymentStep.SUCCESS]: 0,
-      [PaymentStep.ERROR]: 0
-    };
-
-    return timings[state.step] || 0;
+    return stepProgress[state.step] || 0;
   }, [state.step]);
 
-  /**
-   * Update state
-   */
-  const updateState = useCallback((updates: Partial<PaymentState>) => {
-    setState(prev => ({ ...prev, ...updates }));
-  }, []);
-
-  /**
-   * Handle errors
-   */
-  const handleError = useCallback((error: Error) => {
-    console.error('Payment error:', error);
-    updateState({
-      step: PaymentStep.ERROR,
-      error
-    });
-    clearPolling();
-  }, [updateState]);
-
-  /**
-   * Clear polling intervals
-   */
-  const clearPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = undefined;
-    }
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = undefined;
-    }
-  }, []);
-
-  /**
-   * Start confirmation polling
-   */
-  const startConfirmationPolling = useCallback((txHash: string) => {
-    updateState({ step: PaymentStep.CONFIRMING_TRANSACTION });
-
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        // This would call your blockchain service to check confirmations
-        // const receipt = await getTransactionReceipt(txHash);
-        // updateState({ confirmations: receipt.confirmations });
-        
-        // Simulate for now
-        updateState(prev => ({ 
-          confirmations: prev.confirmations + 1 
-        }));
-
-        // Check if we have enough confirmations
-        const requiredConfirmations = currentParams?.options?.confirmations || 12;
-        if (state.confirmations >= requiredConfirmations) {
-          clearPolling();
-          updateState({ step: PaymentStep.SUCCESS });
-        }
-      } catch (error) {
-        handleError(error as Error);
-      }
-    }, CONFIRMATION_POLLING_INTERVAL);
-
-    // Set timeout
-    const timeout = currentParams?.options?.timeout || DEFAULT_TIMEOUT;
-    timeoutRef.current = setTimeout(() => {
-      clearPolling();
-      handleError(new Error('Payment confirmation timeout'));
-    }, timeout);
-  }, [currentParams, state.confirmations, updateState, handleError, clearPolling]);
-
-  /**
-   * Check wallet connection
-   */
-  const checkWalletConnection = useCallback(async (): Promise<boolean> => {
-    if (!isConnected || !address) {
-      updateState({ step: PaymentStep.WALLET_CONNECT });
-      // Trigger wallet connection modal
-      return false;
-    }
-    return true;
-  }, [isConnected, address, updateState]);
-
-  /**
-   * Approve token spending
-   */
-  const approve = useCallback(async () => {
-    if (!currentParams) return;
-
-    try {
-      updateState({ step: PaymentStep.TOKEN_APPROVAL });
-
-      // This would call your contract service to approve tokens
-      // const tx = await approveToken(currentParams.token, currentParams.amount);
-      // await tx.wait();
-
-      // Simulate approval
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      updateState({ step: PaymentStep.CONFIRMING });
-    } catch (error) {
-      handleError(error as Error);
-    }
-  }, [currentParams, updateState, handleError]);
-
-  /**
-   * Confirm and execute payment
-   */
-  const confirm = useCallback(async () => {
-    if (!currentParams) return;
-
-    try {
-      updateState({ step: PaymentStep.PROCESSING });
-
-      // This would call your payment service
-      // const result = await processPayment(currentParams);
-      // const txHash = result.transactionHash;
-
-      // Simulate payment
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      const mockTxHash = '0x' + Math.random().toString(16).substring(2);
-
-      updateState({
-        transactionHash: mockTxHash,
-        paymentId: 'payment_' + Date.now()
-      });
-
-      // Start polling for confirmations
-      startConfirmationPolling(mockTxHash);
-    } catch (error) {
-      handleError(error as Error);
-    }
-  }, [currentParams, updateState, handleError, startConfirmationPolling]);
-
-  /**
-   * Initiate payment flow
-   */
-  const initiate = useCallback(async (params: PaymentParams) => {
-    try {
-      reset();
-      setCurrentParams(params);
-      updateState({ step: PaymentStep.INITIALIZING });
-
-      // Check wallet connection
-      const isWalletConnected = await checkWalletConnection();
-      if (!isWalletConnected) return;
-
-      // Check if approval is needed
-      if (params.options?.requireApproval) {
-        await approve();
-      } else {
-        updateState({ step: PaymentStep.CONFIRMING });
-      }
-    } catch (error) {
-      handleError(error as Error);
-    }
-  }, [updateState, checkWalletConnection, approve, handleError]);
-
-  /**
-   * Retry failed payment
-   */
-  const retry = useCallback(async () => {
-    if (!currentParams || state.retryCount >= MAX_RETRIES) return;
-
-    updateState({ 
-      retryCount: state.retryCount + 1,
-      error: undefined
-    });
-
-    await initiate(currentParams);
-  }, [currentParams, state.retryCount, updateState, initiate]);
-
-  /**
-   * Cancel payment
-   */
-  const cancel = useCallback(() => {
-    clearPolling();
-    updateState({ step: PaymentStep.IDLE });
-    setCurrentParams(null);
-  }, [clearPolling, updateState]);
-
-  /**
-   * Reset state
-   */
-  const reset = useCallback(() => {
-    clearPolling();
-    setState({
-      step: PaymentStep.IDLE,
-      confirmations: 0,
-      retryCount: 0
-    });
-    setCurrentParams(null);
-  }, [clearPolling]);
-
-  /**
-   * Cleanup on unmount
-   */
-  useEffect(() => {
-    return () => {
-      clearPolling();
-    };
-  }, [clearPolling]);
-
   return {
+    // State
     state,
-    isProcessing: [
-      PaymentStep.INITIALIZING,
-      PaymentStep.TOKEN_APPROVAL,
-      PaymentStep.PROCESSING,
-      PaymentStep.CONFIRMING_TRANSACTION
-    ].includes(state.step),
-    canRetry: state.step === PaymentStep.ERROR && state.retryCount < MAX_RETRIES,
-    progress: progress(),
-    initiate,
-    approve,
-    confirm,
-    retry,
-    cancel,
+    history,
+    canGoBack,
+    canProceed,
+
+    // Actions
+    setStep,
+    nextStep,
+    previousStep,
+    setRecipient,
+    setToken,
+    setAmount,
+    setMetadata,
+    markAsApproved,
+    setTransactionHash,
+    setError,
+    clearError,
     reset,
-    getStepDescription,
-    getEstimatedTime
+    complete,
+    cancel,
+
+    // Helpers
+    isStepValid,
+    getProgress,
   };
 }
-
