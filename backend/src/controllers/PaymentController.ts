@@ -1,51 +1,76 @@
 /**
- * PaymentController - HTTP request handlers for payment endpoints
+ * PaymentController - HTTP request handlers for payments
  * @module controllers
  */
 
 import { Request, Response } from 'express';
-import { paymentRepository, CreatePaymentData } from '../database/PaymentRepository';
+import { PaymentRepository } from '../repositories/PaymentRepository';
+import { EnhancedPayment, PaymentStatus, BlockchainNetwork } from '../models/Enhanced Payment.model';
+import { Logger } from '../utils/logger';
 
 export class PaymentController {
+  private logger: Logger;
+  private paymentRepository: PaymentRepository;
+
+  constructor(paymentRepository: PaymentRepository) {
+    this.logger = new Logger('PaymentController');
+    this.paymentRepository = paymentRepository;
+  }
+
   /**
    * Create a new payment
    */
-  async createPayment(req: Request, res: Response): Promise<void> {
+  createPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-      const paymentData: CreatePaymentData = {
-        merchantId: req.body.merchantId,
-        payerAddress: req.body.payerAddress,
-        payeeAddress: req.body.payeeAddress,
-        amount: req.body.amount,
-        currency: req.body.currency,
-        tokenAddress: req.body.tokenAddress,
-        network: req.body.network,
-        metadata: req.body.metadata,
-        expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : undefined,
+      const {
+        merchantId,
+        payerAddress,
+        payeeAddress,
+        amount,
+        currency,
+        network,
+        metadata,
+      } = req.body;
+
+      const payment: EnhancedPayment = {
+        id: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        merchantId,
+        payerAddress,
+        payeeAddress,
+        amount,
+        currency,
+        network: network as BlockchainNetwork,
+        status: PaymentStatus.PENDING,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        transactions: [],
+        metadata,
       };
 
-      const payment = await paymentRepository.create(paymentData);
+      const created = await this.paymentRepository.create(payment);
+      this.logger.info(`Payment created: ${created.id}`);
 
       res.status(201).json({
         success: true,
-        data: payment,
+        data: created,
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error creating payment:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to create payment',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: error.message,
       });
     }
-  }
+  };
 
   /**
    * Get payment by ID
    */
-  async getPayment(req: Request, res: Response): Promise<void> {
+  getPayment = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const payment = await paymentRepository.findById(id);
+      const payment = await this.paymentRepository.findById(id);
 
       if (!payment) {
         res.status(404).json({
@@ -55,73 +80,59 @@ export class PaymentController {
         return;
       }
 
-      res.json({
+      res.status(200).json({
         success: true,
         data: payment,
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error getting payment:', error);
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch payment',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Failed to get payment',
+        message: error.message,
       });
     }
-  }
+  };
 
   /**
-   * Get payment by transaction hash
+   * List payments with filters
    */
-  async getPaymentByTxHash(req: Request, res: Response): Promise<void> {
+  listPayments = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { txHash } = req.params;
-      const payment = await paymentRepository.findByTransactionHash(txHash);
+      const {
+        merchantId,
+        status,
+        network,
+        payerAddress,
+        payeeAddress,
+        fromDate,
+        toDate,
+        page = 1,
+        limit = 10,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+      } = req.query;
 
-      if (!payment) {
-        res.status(404).json({
-          success: false,
-          error: 'Payment not found',
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        data: payment,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch payment',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  /**
-   * List payments with filtering and pagination
-   */
-  async listPayments(req: Request, res: Response): Promise<void> {
-    try {
-      const filter = {
-        merchantId: req.query.merchantId as string,
-        payerAddress: req.query.payerAddress as string,
-        payeeAddress: req.query.payeeAddress as string,
-        status: req.query.status as any,
-        network: req.query.network as string,
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+      const filters = {
+        merchantId: merchantId as string,
+        status: status as PaymentStatus,
+        network: network as BlockchainNetwork,
+        payerAddress: payerAddress as string,
+        payeeAddress: payeeAddress as string,
+        fromDate: fromDate ? new Date(fromDate as string) : undefined,
+        toDate: toDate ? new Date(toDate as string) : undefined,
       };
 
       const pagination = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 10,
-        sortBy: req.query.sortBy as any,
-        sortOrder: req.query.sortOrder as any,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        sortBy: sortBy as keyof EnhancedPayment,
+        sortOrder: sortOrder as 'asc' | 'desc',
       };
 
-      const result = await paymentRepository.find(filter, pagination);
+      const result = await this.paymentRepository.findMany(filters, pagination);
 
-      res.json({
+      res.status(200).json({
         success: true,
         data: result.data,
         pagination: {
@@ -131,32 +142,27 @@ export class PaymentController {
           totalPages: result.totalPages,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error listing payments:', error);
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch payments',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Failed to list payments',
+        message: error.message,
       });
     }
-  }
+  };
 
   /**
    * Update payment
    */
-  async updatePayment(req: Request, res: Response): Promise<void> {
+  updatePayment = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const updateData = {
-        status: req.body.status,
-        transactionHash: req.body.transactionHash,
-        metadata: req.body.metadata,
-        feeAmount: req.body.feeAmount,
-        netAmount: req.body.netAmount,
-      };
+      const updates = req.body;
 
-      const payment = await paymentRepository.update(id, updateData);
+      const updated = await this.paymentRepository.update(id, updates);
 
-      if (!payment) {
+      if (!updated) {
         res.status(404).json({
           success: false,
           error: 'Payment not found',
@@ -164,26 +170,27 @@ export class PaymentController {
         return;
       }
 
-      res.json({
+      res.status(200).json({
         success: true,
-        data: payment,
+        data: updated,
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error updating payment:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to update payment',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: error.message,
       });
     }
-  }
+  };
 
   /**
    * Delete payment
    */
-  async deletePayment(req: Request, res: Response): Promise<void> {
+  deletePayment = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const deleted = await paymentRepository.delete(id);
+      const deleted = await this.paymentRepository.delete(id);
 
       if (!deleted) {
         res.status(404).json({
@@ -193,197 +200,83 @@ export class PaymentController {
         return;
       }
 
-      res.json({
+      res.status(200).json({
         success: true,
         message: 'Payment deleted successfully',
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error deleting payment:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to delete payment',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: error.message,
       });
     }
-  }
+  };
 
   /**
    * Get payment statistics
    */
-  async getStatistics(req: Request, res: Response): Promise<void> {
+  getStatistics = async (req: Request, res: Response): Promise<void> => {
     try {
-      const filter = {
-        merchantId: req.query.merchantId as string,
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
-      };
+      const { merchantId } = req.query;
+      const stats = await this.paymentRepository.getStatistics(merchantId as string);
+      const statusCounts = await this.paymentRepository.countByStatus(merchantId as string);
 
-      const stats = await paymentRepository.getStatistics(filter);
-
-      res.json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch statistics',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  /**
-   * Get recent payments
-   */
-  async getRecentPayments(req: Request, res: Response): Promise<void> {
-    try {
-      const limit = parseInt(req.query.limit as string) || 10;
-      const merchantId = req.query.merchantId as string;
-
-      const payments = await paymentRepository.getRecent(limit, merchantId);
-
-      res.json({
-        success: true,
-        data: payments,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch recent payments',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  /**
-   * Get payment volume by period
-   */
-  async getVolumeByPeriod(req: Request, res: Response): Promise<void> {
-    try {
-      const period = (req.query.period as 'day' | 'week' | 'month') || 'day';
-      const filter = {
-        merchantId: req.query.merchantId as string,
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
-      };
-
-      const volumeData = await paymentRepository.getVolumeByPeriod(period, filter);
-
-      res.json({
-        success: true,
-        data: volumeData,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch volume data',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  /**
-   * Search payments
-   */
-  async searchPayments(req: Request, res: Response): Promise<void> {
-    try {
-      const query = req.query.q as string;
-
-      if (!query) {
-        res.status(400).json({
-          success: false,
-          error: 'Search query is required',
-        });
-        return;
-      }
-
-      const pagination = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 10,
-      };
-
-      const result = await paymentRepository.search(query, pagination);
-
-      res.json({
-        success: true,
-        data: result.data,
-        pagination: {
-          page: result.page,
-          limit: result.limit,
-          total: result.total,
-          totalPages: result.totalPages,
-        },
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to search payments',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-
-  /**
-   * Bulk update payment status
-   */
-  async bulkUpdateStatus(req: Request, res: Response): Promise<void> {
-    try {
-      const { ids, status } = req.body;
-
-      if (!Array.isArray(ids) || ids.length === 0) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid payment IDs',
-        });
-        return;
-      }
-
-      if (!status) {
-        res.status(400).json({
-          success: false,
-          error: 'Status is required',
-        });
-        return;
-      }
-
-      const updated = await paymentRepository.bulkUpdateStatus(ids, status);
-
-      res.json({
+      res.status(200).json({
         success: true,
         data: {
-          updated,
-          total: ids.length,
+          ...stats,
+          statusCounts,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error getting statistics:', error);
       res.status(500).json({
         success: false,
-        error: 'Failed to bulk update payments',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Failed to get statistics',
+        message: error.message,
       });
     }
-  }
+  };
 
   /**
-   * Get expired pending payments
+   * Update payment status
    */
-  async getExpiredPending(req: Request, res: Response): Promise<void> {
+  updateStatus = async (req: Request, res: Response): Promise<void> => {
     try {
-      const payments = await paymentRepository.getExpiredPending();
+      const { id } = req.params;
+      const { status } = req.body;
 
-      res.json({
+      if (!Object.values(PaymentStatus).includes(status)) {
+        res.status(400).json({
+          success: false,
+          error: 'Invalid payment status',
+        });
+        return;
+      }
+
+      const updated = await this.paymentRepository.updateStatus(id, status);
+
+      if (!updated) {
+        res.status(404).json({
+          success: false,
+          error: 'Payment not found',
+        });
+        return;
+      }
+
+      res.status(200).json({
         success: true,
-        data: payments,
+        data: updated,
       });
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error('Error updating status:', error);
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch expired payments',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Failed to update status',
+        message: error.message,
       });
     }
-  }
+  };
 }
-
-export const paymentController = new PaymentController();
-
