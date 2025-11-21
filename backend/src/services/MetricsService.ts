@@ -1,345 +1,350 @@
 /**
  * Metrics Service
- * Collects and tracks system performance metrics
+ * System performance and business metrics tracking
  */
 
-import { Pool } from 'pg';
 import logger from '../utils/logger';
+import { CacheService } from './CacheService';
 
 export interface SystemMetrics {
   timestamp: Date;
-  requestsPerSecond: number;
-  averageResponseTime: number;
-  errorRate: number;
-  activeConnections: number;
-  cacheHitRate: number;
-  queueDepth: number;
+  cpu: {
+    usage: number; // percentage
+    cores: number;
+  };
+  memory: {
+    used: number; // bytes
+    total: number; // bytes
+    percentage: number;
+  };
+  requests: {
+    total: number;
+    successful: number;
+    failed: number;
+    avgResponseTime: number; // ms
+  };
+  database: {
+    connections: number;
+    activeQueries: number;
+    slowQueries: number;
+  };
 }
 
-export interface PaymentMetrics {
-  totalPayments: number;
-  successRate: number;
-  averageProcessingTime: number;
-  totalVolume: string;
-  failureRate: number;
-  byStatus: Record<string, number>;
-  byCurrency: Record<string, number>;
+export interface BusinessMetrics {
+  timestamp: Date;
+  payments: {
+    total: number;
+    successful: number;
+    failed: number;
+    pending: number;
+    totalVolume: number;
+    avgValue: number;
+  };
+  revenue: {
+    total: number;
+    fees: number;
+    avgPerTransaction: number;
+  };
+  users: {
+    total: number;
+    active: number;
+    new: number;
+  };
 }
 
-export interface PerformanceMetrics {
-  cpuUsage: number;
-  memoryUsage: number;
-  diskUsage: number;
-  networkIO: number;
-  databaseConnections: number;
-  responseTimeP50: number;
-  responseTimeP95: number;
-  responseTimeP99: number;
+interface MetricDataPoint {
+  timestamp: Date;
+  value: number;
+  label?: string;
+}
+
+interface MetricsSummary {
+  current: number;
+  min: number;
+  max: number;
+  avg: number;
+  trend: 'up' | 'down' | 'stable';
 }
 
 export class MetricsService {
-  private db: Pool;
-  private metrics: Map<string, number[]> = new Map();
-  private readonly maxSamples = 1000;
+  private static instance: MetricsService;
+  private cacheService: CacheService;
+  private metricsHistory: Map<string, MetricDataPoint[]>;
+  private readonly maxHistorySize = 1000;
+  private readonly historyRetentionHours = 24;
 
-  constructor(db: Pool) {
-    this.db = db;
+  private constructor() {
+    this.cacheService = CacheService.getInstance();
+    this.metricsHistory = new Map();
+    logger.info('MetricsService initialized.');
+
+    // Start periodic metrics collection
+    this.startPeriodicCollection();
   }
 
-  /**
-   * Record a metric value
-   */
-  recordMetric(name: string, value: number): void {
-    if (!this.metrics.has(name)) {
-      this.metrics.set(name, []);
+  public static getInstance(): MetricsService {
+    if (!MetricsService.instance) {
+      MetricsService.instance = new MetricsService();
     }
-
-    const samples = this.metrics.get(name)!;
-    samples.push(value);
-
-    // Keep only recent samples
-    if (samples.length > this.maxSamples) {
-      samples.shift();
-    }
+    return MetricsService.instance;
   }
 
   /**
-   * Get metric statistics
+   * Record a custom metric data point
    */
-  getMetricStats(name: string): {
-    count: number;
-    min: number;
-    max: number;
-    avg: number;
-    median: number;
-    p95: number;
-    p99: number;
-  } | null {
-    const samples = this.metrics.get(name);
-
-    if (!samples || samples.length === 0) {
-      return null;
-    }
-
-    const sorted = [...samples].sort((a, b) => a - b);
-    const count = sorted.length;
-
-    return {
-      count,
-      min: sorted[0],
-      max: sorted[count - 1],
-      avg: sorted.reduce((sum, val) => sum + val, 0) / count,
-      median: sorted[Math.floor(count / 2)],
-      p95: sorted[Math.floor(count * 0.95)],
-      p99: sorted[Math.floor(count * 0.99)],
-    };
-  }
-
-  /**
-   * Get current system metrics
-   */
-  async getSystemMetrics(): Promise<SystemMetrics> {
-    const now = new Date();
-
-    // Get request rate from last minute
-    const requestsPerSecond = this.calculateRate('requests', 60);
-
-    // Get average response time
-    const responseTimeStats = this.getMetricStats('response_time');
-    const averageResponseTime = responseTimeStats?.avg || 0;
-
-    // Calculate error rate
-    const totalRequests = this.getMetricValue('requests_total') || 1;
-    const totalErrors = this.getMetricValue('requests_errors') || 0;
-    const errorRate = (totalErrors / totalRequests) * 100;
-
-    // Get connection metrics
-    const activeConnections = this.getMetricValue('active_connections') || 0;
-
-    // Calculate cache hit rate
-    const cacheHits = this.getMetricValue('cache_hits') || 0;
-    const cacheMisses = this.getMetricValue('cache_misses') || 0;
-    const cacheTotal = cacheHits + cacheMisses;
-    const cacheHitRate = cacheTotal > 0 ? (cacheHits / cacheTotal) * 100 : 0;
-
-    // Get queue depth
-    const queueDepth = this.getMetricValue('queue_depth') || 0;
-
-    return {
-      timestamp: now,
-      requestsPerSecond,
-      averageResponseTime,
-      errorRate,
-      activeConnections,
-      cacheHitRate,
-      queueDepth,
-    };
-  }
-
-  /**
-   * Get payment metrics
-   */
-  async getPaymentMetrics(timeRange: 'hour' | 'day' | 'week' = 'day'): Promise<PaymentMetrics> {
+  public recordMetric(name: string, value: number, label?: string): void {
     try {
-      const interval = this.getTimeInterval(timeRange);
-      const startDate = new Date(Date.now() - interval);
+      const dataPoint: MetricDataPoint = {
+        timestamp: new Date(),
+        value,
+        label,
+      };
 
-      const query = `
-        SELECT 
-          COUNT(*) as total_payments,
-          COUNT(*) FILTER (WHERE status = 'succeeded') as successful_payments,
-          COUNT(*) FILTER (WHERE status = 'failed') as failed_payments,
-          SUM(amount::numeric) FILTER (WHERE status = 'succeeded') as total_volume,
-          AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_processing_time,
-          json_object_agg(status, status_count) as by_status,
-          json_object_agg(currency, currency_count) as by_currency
-        FROM (
-          SELECT 
-            status,
-            currency,
-            amount,
-            created_at,
-            updated_at,
-            COUNT(*) OVER (PARTITION BY status) as status_count,
-            COUNT(*) OVER (PARTITION BY currency) as currency_count
-          FROM payments
-          WHERE created_at >= $1
-        ) sub
-        GROUP BY ()
-      `;
-
-      const result = await this.db.query(query, [startDate]);
-
-      if (result.rows.length === 0) {
-        return this.getEmptyPaymentMetrics();
+      if (!this.metricsHistory.has(name)) {
+        this.metricsHistory.set(name, []);
       }
 
-      const row = result.rows[0];
-      const totalPayments = parseInt(row.total_payments) || 0;
-      const successfulPayments = parseInt(row.successful_payments) || 0;
+      const history = this.metricsHistory.get(name)!;
+      history.push(dataPoint);
 
-      return {
-        totalPayments,
-        successRate: totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0,
-        averageProcessingTime: parseFloat(row.avg_processing_time) || 0,
-        totalVolume: row.total_volume || '0',
-        failureRate:
-          totalPayments > 0
-            ? ((parseInt(row.failed_payments) || 0) / totalPayments) * 100
-            : 0,
-        byStatus: row.by_status || {},
-        byCurrency: row.by_currency || {},
-      };
+      // Trim history if too large
+      if (history.length > this.maxHistorySize) {
+        history.shift();
+      }
+
+      // Clean old data
+      this.cleanOldMetrics(name);
+
+      logger.debug(`Recorded metric: ${name} = ${value}`);
     } catch (error) {
-      logger.error('Error fetching payment metrics:', error);
-      return this.getEmptyPaymentMetrics();
+      logger.error(`Error recording metric ${name}:`, error);
     }
   }
 
   /**
-   * Get performance metrics
+   * Get metric history
    */
-  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
-    // In production, these would come from system monitoring tools
-    const responseTimeStats = this.getMetricStats('response_time');
+  public getMetricHistory(name: string, hours: number = 1): MetricDataPoint[] {
+    const history = this.metricsHistory.get(name) || [];
+    const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    return {
-      cpuUsage: this.getMetricValue('cpu_usage') || 0,
-      memoryUsage: this.getMetricValue('memory_usage') || 0,
-      diskUsage: this.getMetricValue('disk_usage') || 0,
-      networkIO: this.getMetricValue('network_io') || 0,
-      databaseConnections: this.getMetricValue('db_connections') || 0,
-      responseTimeP50: responseTimeStats?.median || 0,
-      responseTimeP95: responseTimeStats?.p95 || 0,
-      responseTimeP99: responseTimeStats?.p99 || 0,
-    };
+    return history.filter((dp) => dp.timestamp >= cutoffTime);
   }
 
   /**
-   * Record HTTP request
+   * Get metric summary statistics
    */
-  recordRequest(responseTime: number, statusCode: number): void {
-    this.recordMetric('response_time', responseTime);
-    this.incrementCounter('requests_total');
+  public getMetricSummary(name: string, hours: number = 1): MetricsSummary | null {
+    const history = this.getMetricHistory(name, hours);
 
-    if (statusCode >= 400) {
-      this.incrementCounter('requests_errors');
-    }
-
-    if (statusCode >= 500) {
-      this.incrementCounter('requests_server_errors');
-    }
-  }
-
-  /**
-   * Record cache operation
-   */
-  recordCacheOperation(hit: boolean): void {
-    if (hit) {
-      this.incrementCounter('cache_hits');
-    } else {
-      this.incrementCounter('cache_misses');
-    }
-  }
-
-  /**
-   * Record database query
-   */
-  recordDatabaseQuery(duration: number, success: boolean): void {
-    this.recordMetric('db_query_time', duration);
-    this.incrementCounter('db_queries_total');
-
-    if (!success) {
-      this.incrementCounter('db_queries_errors');
-    }
-  }
-
-  /**
-   * Set gauge value
-   */
-  setGauge(name: string, value: number): void {
-    this.metrics.set(name, [value]);
-  }
-
-  /**
-   * Increment counter
-   */
-  incrementCounter(name: string, amount: number = 1): void {
-    const current = this.getMetricValue(name) || 0;
-    this.setGauge(name, current + amount);
-  }
-
-  /**
-   * Get metric value
-   */
-  private getMetricValue(name: string): number | null {
-    const samples = this.metrics.get(name);
-    if (!samples || samples.length === 0) {
+    if (history.length === 0) {
       return null;
     }
-    return samples[samples.length - 1];
-  }
 
-  /**
-   * Calculate rate per second
-   */
-  private calculateRate(metricName: string, windowSeconds: number): number {
-    const samples = this.metrics.get(metricName);
-    if (!samples || samples.length === 0) {
-      return 0;
+    const values = history.map((dp) => dp.value);
+    const current = values[values.length - 1];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+
+    // Calculate trend
+    let trend: 'up' | 'down' | 'stable' = 'stable';
+    if (history.length >= 2) {
+      const recentAvg = values.slice(-5).reduce((sum, v) => sum + v, 0) / Math.min(5, values.length);
+      const olderAvg = values.slice(0, -5).reduce((sum, v) => sum + v, 0) / Math.max(1, values.length - 5);
+
+      if (recentAvg > olderAvg * 1.1) trend = 'up';
+      else if (recentAvg < olderAvg * 0.9) trend = 'down';
     }
 
-    // Simple rate calculation based on recent samples
-    const recentSamples = samples.slice(-windowSeconds);
-    const sum = recentSamples.reduce((acc, val) => acc + val, 0);
-    return sum / windowSeconds;
+    return { current, min, max, avg, trend };
   }
 
   /**
-   * Get time interval in milliseconds
+   * Collect system metrics
    */
-  private getTimeInterval(range: 'hour' | 'day' | 'week'): number {
-    switch (range) {
-      case 'hour':
-        return 60 * 60 * 1000;
-      case 'day':
-        return 24 * 60 * 60 * 1000;
-      case 'week':
-        return 7 * 24 * 60 * 60 * 1000;
-      default:
-        return 24 * 60 * 60 * 1000;
+  public async collectSystemMetrics(): Promise<SystemMetrics> {
+    try {
+      const metrics: SystemMetrics = {
+        timestamp: new Date(),
+        cpu: {
+          usage: await this.getCPUUsage(),
+          cores: require('os').cpus().length,
+        },
+        memory: {
+          used: process.memoryUsage().heapUsed,
+          total: require('os').totalmem(),
+          percentage: (process.memoryUsage().heapUsed / require('os').totalmem()) * 100,
+        },
+        requests: {
+          total: this.getMetricValue('requests_total') || 0,
+          successful: this.getMetricValue('requests_successful') || 0,
+          failed: this.getMetricValue('requests_failed') || 0,
+          avgResponseTime: this.getMetricValue('response_time_avg') || 0,
+        },
+        database: {
+          connections: this.getMetricValue('db_connections') || 0,
+          activeQueries: this.getMetricValue('db_active_queries') || 0,
+          slowQueries: this.getMetricValue('db_slow_queries') || 0,
+        },
+      };
+
+      // Record key metrics
+      this.recordMetric('cpu_usage', metrics.cpu.usage);
+      this.recordMetric('memory_usage', metrics.memory.percentage);
+
+      return metrics;
+    } catch (error) {
+      logger.error('Error collecting system metrics:', error);
+      throw error;
     }
   }
 
   /**
-   * Get empty payment metrics
+   * Collect business metrics
    */
-  private getEmptyPaymentMetrics(): PaymentMetrics {
-    return {
-      totalPayments: 0,
-      successRate: 0,
-      averageProcessingTime: 0,
-      totalVolume: '0',
-      failureRate: 0,
-      byStatus: {},
-      byCurrency: {},
-    };
+  public async collectBusinessMetrics(): Promise<BusinessMetrics> {
+    try {
+      const metrics: BusinessMetrics = {
+        timestamp: new Date(),
+        payments: {
+          total: this.getMetricValue('payments_total') || 0,
+          successful: this.getMetricValue('payments_successful') || 0,
+          failed: this.getMetricValue('payments_failed') || 0,
+          pending: this.getMetricValue('payments_pending') || 0,
+          totalVolume: this.getMetricValue('payments_volume') || 0,
+          avgValue: this.getMetricValue('payments_avg_value') || 0,
+        },
+        revenue: {
+          total: this.getMetricValue('revenue_total') || 0,
+          fees: this.getMetricValue('revenue_fees') || 0,
+          avgPerTransaction: this.getMetricValue('revenue_per_transaction') || 0,
+        },
+        users: {
+          total: this.getMetricValue('users_total') || 0,
+          active: this.getMetricValue('users_active') || 0,
+          new: this.getMetricValue('users_new') || 0,
+        },
+      };
+
+      return metrics;
+    } catch (error) {
+      logger.error('Error collecting business metrics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Increment a counter metric
+   */
+  public incrementCounter(name: string, value: number = 1): void {
+    const currentValue = this.getMetricValue(name) || 0;
+    this.recordMetric(name, currentValue + value);
+  }
+
+  /**
+   * Set a gauge metric
+   */
+  public setGauge(name: string, value: number): void {
+    this.recordMetric(name, value);
+  }
+
+  /**
+   * Record a histogram value (e.g., response time)
+   */
+  public recordHistogram(name: string, value: number): void {
+    this.recordMetric(name, value);
+
+    // Also calculate and store running average
+    const history = this.getMetricHistory(name, 1);
+    const avg = history.reduce((sum, dp) => sum + dp.value, 0) / history.length;
+    this.recordMetric(`${name}_avg`, avg);
+  }
+
+  /**
+   * Get current value of a metric
+   */
+  private getMetricValue(name: string): number | null {
+    const history = this.metricsHistory.get(name);
+    if (!history || history.length === 0) return null;
+
+    return history[history.length - 1].value;
+  }
+
+  /**
+   * Clean old metrics data
+   */
+  private cleanOldMetrics(name: string): void {
+    const history = this.metricsHistory.get(name);
+    if (!history) return;
+
+    const cutoffTime = new Date(Date.now() - this.historyRetentionHours * 60 * 60 * 1000);
+    const filtered = history.filter((dp) => dp.timestamp >= cutoffTime);
+
+    this.metricsHistory.set(name, filtered);
+  }
+
+  /**
+   * Get CPU usage percentage
+   */
+  private async getCPUUsage(): Promise<number> {
+    return new Promise((resolve) => {
+      const startUsage = process.cpuUsage();
+      const startTime = Date.now();
+
+      setTimeout(() => {
+        const elapsedTime = Date.now() - startTime;
+        const elapsedUsage = process.cpuUsage(startUsage);
+        const totalUsage = (elapsedUsage.user + elapsedUsage.system) / 1000; // Convert to ms
+        const percentage = (totalUsage / elapsedTime) * 100;
+
+        resolve(Math.min(percentage, 100));
+      }, 100);
+    });
+  }
+
+  /**
+   * Start periodic metrics collection
+   */
+  private startPeriodicCollection(): void {
+    // Collect system metrics every minute
+    setInterval(async () => {
+      try {
+        await this.collectSystemMetrics();
+      } catch (error) {
+        logger.error('Error in periodic metrics collection:', error);
+      }
+    }, 60000);
+
+    logger.info('Started periodic metrics collection');
+  }
+
+  /**
+   * Get all metrics for monitoring dashboard
+   */
+  public async getAllMetrics(): Promise<{
+    system: SystemMetrics;
+    business: BusinessMetrics;
+  }> {
+    const [system, business] = await Promise.all([
+      this.collectSystemMetrics(),
+      this.collectBusinessMetrics(),
+    ]);
+
+    return { system, business };
   }
 
   /**
    * Export metrics in Prometheus format
    */
-  exportPrometheus(): string {
+  public exportPrometheusMetrics(): string {
     const lines: string[] = [];
 
-    this.metrics.forEach((samples, name) => {
-      const stats = this.getMetricStats(name);
-      if (stats) {
-        lines.push(`# HELP ${name} Metric ${name}`);
+    this.metricsHistory.forEach((history, name) => {
+      const latest = history[history.length - 1];
+      if (latest) {
         lines.push(`# TYPE ${name} gauge`);
-        lines.push(`${name}_avg ${stats.avg}`);
-        lines.push(`${name}_p95 ${stats.p95}`);
-        lines.push(`${name}_p99 ${stats.p99}`);
+        lines.push(`${name} ${latest.value} ${latest.timestamp.getTime()}`);
       }
     });
 
@@ -347,81 +352,41 @@ export class MetricsService {
   }
 
   /**
-   * Get health check metrics
+   * Get health status based on metrics
    */
-  async getHealthMetrics(): Promise<{
-    healthy: boolean;
-    checks: Record<string, { status: string; message?: string }>;
-  }> {
-    const checks: Record<string, { status: string; message?: string }> = {};
-
-    // Check database
-    try {
-      await this.db.query('SELECT 1');
-      checks.database = { status: 'healthy' };
-    } catch (error) {
-      checks.database = {
-        status: 'unhealthy',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-
-    // Check response time
-    const responseTimeStats = this.getMetricStats('response_time');
-    if (responseTimeStats && responseTimeStats.p95 > 1000) {
-      checks.response_time = {
-        status: 'degraded',
-        message: 'High response time',
-      };
-    } else {
-      checks.response_time = { status: 'healthy' };
-    }
-
-    // Check error rate
-    const errorRate = this.getMetricValue('requests_errors') || 0;
+  public getHealthStatus(): {
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    checks: Record<string, boolean>;
+    details: Record<string, any>;
+  } {
+    const cpuUsage = this.getMetricValue('cpu_usage') || 0;
+    const memoryUsage = this.getMetricValue('memory_usage') || 0;
+    const failedRequests = this.getMetricValue('requests_failed') || 0;
     const totalRequests = this.getMetricValue('requests_total') || 1;
-    const rate = (errorRate / totalRequests) * 100;
 
-    if (rate > 5) {
-      checks.error_rate = {
-        status: 'degraded',
-        message: `Error rate: ${rate.toFixed(2)}%`,
-      };
-    } else {
-      checks.error_rate = { status: 'healthy' };
-    }
+    const errorRate = (failedRequests / totalRequests) * 100;
 
-    const healthy = Object.values(checks).every((check) => check.status === 'healthy');
+    const checks = {
+      cpu: cpuUsage < 80,
+      memory: memoryUsage < 80,
+      errorRate: errorRate < 5,
+    };
 
-    return { healthy, checks };
-  }
+    let status: 'healthy' | 'degraded' | 'unhealthy';
+    const healthyChecks = Object.values(checks).filter(Boolean).length;
 
-  /**
-   * Reset all metrics
-   */
-  reset(): void {
-    this.metrics.clear();
-    logger.info('All metrics reset');
-  }
+    if (healthyChecks === 3) status = 'healthy';
+    else if (healthyChecks >= 2) status = 'degraded';
+    else status = 'unhealthy';
 
-  /**
-   * Get metrics summary
-   */
-  getSummary(): Record<string, unknown> {
-    const summary: Record<string, unknown> = {};
-
-    this.metrics.forEach((samples, name) => {
-      const stats = this.getMetricStats(name);
-      if (stats) {
-        summary[name] = {
-          count: stats.count,
-          avg: stats.avg.toFixed(2),
-          p95: stats.p95.toFixed(2),
-          p99: stats.p99.toFixed(2),
-        };
-      }
-    });
-
-    return summary;
+    return {
+      status,
+      checks,
+      details: {
+        cpuUsage: `${cpuUsage.toFixed(2)}%`,
+        memoryUsage: `${memoryUsage.toFixed(2)}%`,
+        errorRate: `${errorRate.toFixed(2)}%`,
+      },
+    };
   }
 }
