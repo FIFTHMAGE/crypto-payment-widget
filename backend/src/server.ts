@@ -1,14 +1,44 @@
-/** Backend Server Entry Point */
-import express from 'express';
-import cors from 'cors';
-import { router } from './routes';
+/**
+ * Server entry point
+ * @module server
+ */
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+import app from './app';
+import { env } from './config/environment';
+import { Logger } from './utils/logger';
+import { closeDatabaseConnections } from './config/database';
 
-app.use(cors());
-app.use(express.json());
-app.use('/api', router);
+const logger = new Logger('Server');
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = app.listen(env.PORT, () => {
+  logger.info(`Server is running on port ${env.PORT}`);
+  logger.info(`Environment: ${env.NODE_ENV}`);
+});
 
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM signal received: closing HTTP server');
+  server.close(async () => {
+    logger.info('HTTP server closed');
+    await closeDatabaseConnections();
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT signal received: closing HTTP server');
+  server.close(async () => {
+    logger.info('HTTP server closed');
+    await closeDatabaseConnections();
+    process.exit(0);
+  });
+});
+
+process.on('unhandledRejection', (reason: Error) => {
+  logger.critical('Unhandled Rejection:', reason);
+  throw reason;
+});
+
+process.on('uncaughtException', (error: Error) => {
+  logger.critical('Uncaught Exception:', error);
+  process.exit(1);
+});
