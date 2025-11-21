@@ -1,0 +1,30 @@
+# Hardhat
+cache/
+artifacts/
+typechain-types/
+
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# Testing
+coverage/
+coverage.json
+
+# Foundry
+out/
+broadcast/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
