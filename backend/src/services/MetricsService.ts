@@ -1,412 +1,427 @@
 /**
  * Metrics Service
- * Provides real-time performance metrics and monitoring
+ * Collects and tracks system performance metrics
  */
 
 import { Pool } from 'pg';
-import { createClient, RedisClientType } from 'redis';
 import logger from '../utils/logger';
 
-interface PerformanceMetrics {
+export interface SystemMetrics {
   timestamp: Date;
-  responseTime: number;
-  requestCount: number;
-  errorCount: number;
-  activeConnections: number;
-  memoryUsage: NodeJS.MemoryUsage;
-  cpuUsage: NodeJS.CpuUsage;
-}
-
-interface EndpointMetrics {
-  endpoint: string;
-  method: string;
-  count: number;
-  avgResponseTime: number;
-  minResponseTime: number;
-  maxResponseTime: number;
+  requestsPerSecond: number;
+  averageResponseTime: number;
   errorRate: number;
-  lastAccessed: Date;
+  activeConnections: number;
+  cacheHitRate: number;
+  queueDepth: number;
 }
 
-interface SystemHealth {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  uptime: number;
-  database: {
-    connected: boolean;
-    poolSize: number;
-    activeQueries: number;
-  };
-  cache: {
-    connected: boolean;
-    hitRate: number;
-    memoryUsage: number;
-  };
-  api: {
-    requestsPerMinute: number;
-    averageResponseTime: number;
-    errorRate: number;
-  };
+export interface PaymentMetrics {
+  totalPayments: number;
+  successRate: number;
+  averageProcessingTime: number;
+  totalVolume: string;
+  failureRate: number;
+  byStatus: Record<string, number>;
+  byCurrency: Record<string, number>;
+}
+
+export interface PerformanceMetrics {
+  cpuUsage: number;
+  memoryUsage: number;
+  diskUsage: number;
+  networkIO: number;
+  databaseConnections: number;
+  responseTimeP50: number;
+  responseTimeP95: number;
+  responseTimeP99: number;
 }
 
 export class MetricsService {
-  private redis: RedisClientType;
-  private metrics: Map<string, PerformanceMetrics[]> = new Map();
-  private endpointMetrics: Map<string, EndpointMetrics> = new Map();
-  private startTime: number;
-  private requestCount: number = 0;
-  private errorCount: number = 0;
-  private cacheHits: number = 0;
-  private cacheMisses: number = 0;
+  private db: Pool;
+  private metrics: Map<string, number[]> = new Map();
+  private readonly maxSamples = 1000;
 
-  constructor(
-    private db: Pool,
-    redisUrl: string,
-  ) {
-    this.redis = createClient({ url: redisUrl });
-    this.startTime = Date.now();
-    this.initializeRedis();
+  constructor(db: Pool) {
+    this.db = db;
   }
 
   /**
-   * Initialize Redis connection
+   * Record a metric value
    */
-  private async initializeRedis(): Promise<void> {
-    try {
-      await this.redis.connect();
-      logger.info('Metrics Redis connected');
-    } catch (error) {
-      logger.error('Error connecting to Metrics Redis:', error);
+  recordMetric(name: string, value: number): void {
+    if (!this.metrics.has(name)) {
+      this.metrics.set(name, []);
+    }
+
+    const samples = this.metrics.get(name)!;
+    samples.push(value);
+
+    // Keep only recent samples
+    if (samples.length > this.maxSamples) {
+      samples.shift();
     }
   }
 
   /**
-   * Record API request
+   * Get metric statistics
    */
-  recordRequest(
-    endpoint: string,
-    method: string,
-    responseTime: number,
-    statusCode: number,
-  ): void {
-    this.requestCount++;
+  getMetricStats(name: string): {
+    count: number;
+    min: number;
+    max: number;
+    avg: number;
+    median: number;
+    p95: number;
+    p99: number;
+  } | null {
+    const samples = this.metrics.get(name);
+
+    if (!samples || samples.length === 0) {
+      return null;
+    }
+
+    const sorted = [...samples].sort((a, b) => a - b);
+    const count = sorted.length;
+
+    return {
+      count,
+      min: sorted[0],
+      max: sorted[count - 1],
+      avg: sorted.reduce((sum, val) => sum + val, 0) / count,
+      median: sorted[Math.floor(count / 2)],
+      p95: sorted[Math.floor(count * 0.95)],
+      p99: sorted[Math.floor(count * 0.99)],
+    };
+  }
+
+  /**
+   * Get current system metrics
+   */
+  async getSystemMetrics(): Promise<SystemMetrics> {
+    const now = new Date();
+
+    // Get request rate from last minute
+    const requestsPerSecond = this.calculateRate('requests', 60);
+
+    // Get average response time
+    const responseTimeStats = this.getMetricStats('response_time');
+    const averageResponseTime = responseTimeStats?.avg || 0;
+
+    // Calculate error rate
+    const totalRequests = this.getMetricValue('requests_total') || 1;
+    const totalErrors = this.getMetricValue('requests_errors') || 0;
+    const errorRate = (totalErrors / totalRequests) * 100;
+
+    // Get connection metrics
+    const activeConnections = this.getMetricValue('active_connections') || 0;
+
+    // Calculate cache hit rate
+    const cacheHits = this.getMetricValue('cache_hits') || 0;
+    const cacheMisses = this.getMetricValue('cache_misses') || 0;
+    const cacheTotal = cacheHits + cacheMisses;
+    const cacheHitRate = cacheTotal > 0 ? (cacheHits / cacheTotal) * 100 : 0;
+
+    // Get queue depth
+    const queueDepth = this.getMetricValue('queue_depth') || 0;
+
+    return {
+      timestamp: now,
+      requestsPerSecond,
+      averageResponseTime,
+      errorRate,
+      activeConnections,
+      cacheHitRate,
+      queueDepth,
+    };
+  }
+
+  /**
+   * Get payment metrics
+   */
+  async getPaymentMetrics(timeRange: 'hour' | 'day' | 'week' = 'day'): Promise<PaymentMetrics> {
+    try {
+      const interval = this.getTimeInterval(timeRange);
+      const startDate = new Date(Date.now() - interval);
+
+      const query = `
+        SELECT 
+          COUNT(*) as total_payments,
+          COUNT(*) FILTER (WHERE status = 'succeeded') as successful_payments,
+          COUNT(*) FILTER (WHERE status = 'failed') as failed_payments,
+          SUM(amount::numeric) FILTER (WHERE status = 'succeeded') as total_volume,
+          AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_processing_time,
+          json_object_agg(status, status_count) as by_status,
+          json_object_agg(currency, currency_count) as by_currency
+        FROM (
+          SELECT 
+            status,
+            currency,
+            amount,
+            created_at,
+            updated_at,
+            COUNT(*) OVER (PARTITION BY status) as status_count,
+            COUNT(*) OVER (PARTITION BY currency) as currency_count
+          FROM payments
+          WHERE created_at >= $1
+        ) sub
+        GROUP BY ()
+      `;
+
+      const result = await this.db.query(query, [startDate]);
+
+      if (result.rows.length === 0) {
+        return this.getEmptyPaymentMetrics();
+      }
+
+      const row = result.rows[0];
+      const totalPayments = parseInt(row.total_payments) || 0;
+      const successfulPayments = parseInt(row.successful_payments) || 0;
+
+      return {
+        totalPayments,
+        successRate: totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0,
+        averageProcessingTime: parseFloat(row.avg_processing_time) || 0,
+        totalVolume: row.total_volume || '0',
+        failureRate:
+          totalPayments > 0
+            ? ((parseInt(row.failed_payments) || 0) / totalPayments) * 100
+            : 0,
+        byStatus: row.by_status || {},
+        byCurrency: row.by_currency || {},
+      };
+    } catch (error) {
+      logger.error('Error fetching payment metrics:', error);
+      return this.getEmptyPaymentMetrics();
+    }
+  }
+
+  /**
+   * Get performance metrics
+   */
+  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
+    // In production, these would come from system monitoring tools
+    const responseTimeStats = this.getMetricStats('response_time');
+
+    return {
+      cpuUsage: this.getMetricValue('cpu_usage') || 0,
+      memoryUsage: this.getMetricValue('memory_usage') || 0,
+      diskUsage: this.getMetricValue('disk_usage') || 0,
+      networkIO: this.getMetricValue('network_io') || 0,
+      databaseConnections: this.getMetricValue('db_connections') || 0,
+      responseTimeP50: responseTimeStats?.median || 0,
+      responseTimeP95: responseTimeStats?.p95 || 0,
+      responseTimeP99: responseTimeStats?.p99 || 0,
+    };
+  }
+
+  /**
+   * Record HTTP request
+   */
+  recordRequest(responseTime: number, statusCode: number): void {
+    this.recordMetric('response_time', responseTime);
+    this.incrementCounter('requests_total');
 
     if (statusCode >= 400) {
-      this.errorCount++;
+      this.incrementCounter('requests_errors');
     }
 
-    // Update endpoint metrics
-    const key = `${method}:${endpoint}`;
-    const existing = this.endpointMetrics.get(key);
+    if (statusCode >= 500) {
+      this.incrementCounter('requests_server_errors');
+    }
+  }
 
-    if (existing) {
-      existing.count++;
-      existing.avgResponseTime =
-        (existing.avgResponseTime * (existing.count - 1) + responseTime) / existing.count;
-      existing.minResponseTime = Math.min(existing.minResponseTime, responseTime);
-      existing.maxResponseTime = Math.max(existing.maxResponseTime, responseTime);
-      existing.errorRate = statusCode >= 400 ? (existing.errorRate + 1) / existing.count : existing.errorRate;
-      existing.lastAccessed = new Date();
+  /**
+   * Record cache operation
+   */
+  recordCacheOperation(hit: boolean): void {
+    if (hit) {
+      this.incrementCounter('cache_hits');
     } else {
-      this.endpointMetrics.set(key, {
-        endpoint,
-        method,
-        count: 1,
-        avgResponseTime: responseTime,
-        minResponseTime: responseTime,
-        maxResponseTime: responseTime,
-        errorRate: statusCode >= 400 ? 1 : 0,
-        lastAccessed: new Date(),
-      });
-    }
-
-    // Store in Redis for real-time tracking
-    this.storeMetricInRedis('request', {
-      endpoint,
-      method,
-      responseTime,
-      statusCode,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Record cache hit
-   */
-  recordCacheHit(): void {
-    this.cacheHits++;
-  }
-
-  /**
-   * Record cache miss
-   */
-  recordCacheMiss(): void {
-    this.cacheMisses++;
-  }
-
-  /**
-   * Get cache hit rate
-   */
-  getCacheHitRate(): number {
-    const total = this.cacheHits + this.cacheMisses;
-    return total > 0 ? (this.cacheHits / total) * 100 : 0;
-  }
-
-  /**
-   * Store metric in Redis
-   */
-  private async storeMetricInRedis(type: string, data: unknown): Promise<void> {
-    try {
-      const key = `metrics:${type}:${Date.now()}`;
-      await this.redis.setEx(key, 3600, JSON.stringify(data)); // Expire after 1 hour
-    } catch (error) {
-      logger.error('Error storing metric in Redis:', error);
+      this.incrementCounter('cache_misses');
     }
   }
 
   /**
-   * Get current performance metrics
+   * Record database query
    */
-  getCurrentMetrics(): PerformanceMetrics {
+  recordDatabaseQuery(duration: number, success: boolean): void {
+    this.recordMetric('db_query_time', duration);
+    this.incrementCounter('db_queries_total');
+
+    if (!success) {
+      this.incrementCounter('db_queries_errors');
+    }
+  }
+
+  /**
+   * Set gauge value
+   */
+  setGauge(name: string, value: number): void {
+    this.metrics.set(name, [value]);
+  }
+
+  /**
+   * Increment counter
+   */
+  incrementCounter(name: string, amount: number = 1): void {
+    const current = this.getMetricValue(name) || 0;
+    this.setGauge(name, current + amount);
+  }
+
+  /**
+   * Get metric value
+   */
+  private getMetricValue(name: string): number | null {
+    const samples = this.metrics.get(name);
+    if (!samples || samples.length === 0) {
+      return null;
+    }
+    return samples[samples.length - 1];
+  }
+
+  /**
+   * Calculate rate per second
+   */
+  private calculateRate(metricName: string, windowSeconds: number): number {
+    const samples = this.metrics.get(metricName);
+    if (!samples || samples.length === 0) {
+      return 0;
+    }
+
+    // Simple rate calculation based on recent samples
+    const recentSamples = samples.slice(-windowSeconds);
+    const sum = recentSamples.reduce((acc, val) => acc + val, 0);
+    return sum / windowSeconds;
+  }
+
+  /**
+   * Get time interval in milliseconds
+   */
+  private getTimeInterval(range: 'hour' | 'day' | 'week'): number {
+    switch (range) {
+      case 'hour':
+        return 60 * 60 * 1000;
+      case 'day':
+        return 24 * 60 * 60 * 1000;
+      case 'week':
+        return 7 * 24 * 60 * 60 * 1000;
+      default:
+        return 24 * 60 * 60 * 1000;
+    }
+  }
+
+  /**
+   * Get empty payment metrics
+   */
+  private getEmptyPaymentMetrics(): PaymentMetrics {
     return {
-      timestamp: new Date(),
-      responseTime: this.getAverageResponseTime(),
-      requestCount: this.requestCount,
-      errorCount: this.errorCount,
-      activeConnections: this.db.totalCount,
-      memoryUsage: process.memoryUsage(),
-      cpuUsage: process.cpuUsage(),
+      totalPayments: 0,
+      successRate: 0,
+      averageProcessingTime: 0,
+      totalVolume: '0',
+      failureRate: 0,
+      byStatus: {},
+      byCurrency: {},
     };
   }
 
   /**
-   * Get average response time
+   * Export metrics in Prometheus format
    */
-  private getAverageResponseTime(): number {
-    if (this.endpointMetrics.size === 0) return 0;
+  exportPrometheus(): string {
+    const lines: string[] = [];
 
-    let totalResponseTime = 0;
-    let totalRequests = 0;
-
-    this.endpointMetrics.forEach(metric => {
-      totalResponseTime += metric.avgResponseTime * metric.count;
-      totalRequests += metric.count;
+    this.metrics.forEach((samples, name) => {
+      const stats = this.getMetricStats(name);
+      if (stats) {
+        lines.push(`# HELP ${name} Metric ${name}`);
+        lines.push(`# TYPE ${name} gauge`);
+        lines.push(`${name}_avg ${stats.avg}`);
+        lines.push(`${name}_p95 ${stats.p95}`);
+        lines.push(`${name}_p99 ${stats.p99}`);
+      }
     });
 
-    return totalRequests > 0 ? totalResponseTime / totalRequests : 0;
+    return lines.join('\n');
   }
 
   /**
-   * Get endpoint metrics
+   * Get health check metrics
    */
-  getEndpointMetrics(limit: number = 10): EndpointMetrics[] {
-    return Array.from(this.endpointMetrics.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, limit);
-  }
+  async getHealthMetrics(): Promise<{
+    healthy: boolean;
+    checks: Record<string, { status: string; message?: string }>;
+  }> {
+    const checks: Record<string, { status: string; message?: string }> = {};
 
-  /**
-   * Get slowest endpoints
-   */
-  getSlowestEndpoints(limit: number = 10): EndpointMetrics[] {
-    return Array.from(this.endpointMetrics.values())
-      .sort((a, b) => b.avgResponseTime - a.avgResponseTime)
-      .slice(0, limit);
-  }
-
-  /**
-   * Get endpoints with most errors
-   */
-  getEndpointsWithMostErrors(limit: number = 10): EndpointMetrics[] {
-    return Array.from(this.endpointMetrics.values())
-      .filter(m => m.errorRate > 0)
-      .sort((a, b) => b.errorRate - a.errorRate)
-      .slice(0, limit);
-  }
-
-  /**
-   * Get system health status
-   */
-  async getSystemHealth(): Promise<SystemHealth> {
-    const uptime = (Date.now() - this.startTime) / 1000;
-    const avgResponseTime = this.getAverageResponseTime();
-    const errorRate = this.requestCount > 0 ? (this.errorCount / this.requestCount) * 100 : 0;
-
-    // Check database health
-    let dbConnected = false;
-    let activeQueries = 0;
+    // Check database
     try {
       await this.db.query('SELECT 1');
-      dbConnected = true;
-      activeQueries = this.db.totalCount - this.db.idleCount;
+      checks.database = { status: 'healthy' };
     } catch (error) {
-      logger.error('Database health check failed:', error);
+      checks.database = {
+        status: 'unhealthy',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      };
     }
 
-    // Check cache health
-    let cacheConnected = false;
-    let cacheMemoryUsage = 0;
-    try {
-      await this.redis.ping();
-      cacheConnected = true;
-      const info = await this.redis.info('memory');
-      const match = info.match(/used_memory:(\d+)/);
-      if (match) {
-        cacheMemoryUsage = parseInt(match[1], 10);
+    // Check response time
+    const responseTimeStats = this.getMetricStats('response_time');
+    if (responseTimeStats && responseTimeStats.p95 > 1000) {
+      checks.response_time = {
+        status: 'degraded',
+        message: 'High response time',
+      };
+    } else {
+      checks.response_time = { status: 'healthy' };
+    }
+
+    // Check error rate
+    const errorRate = this.getMetricValue('requests_errors') || 0;
+    const totalRequests = this.getMetricValue('requests_total') || 1;
+    const rate = (errorRate / totalRequests) * 100;
+
+    if (rate > 5) {
+      checks.error_rate = {
+        status: 'degraded',
+        message: `Error rate: ${rate.toFixed(2)}%`,
+      };
+    } else {
+      checks.error_rate = { status: 'healthy' };
+    }
+
+    const healthy = Object.values(checks).every((check) => check.status === 'healthy');
+
+    return { healthy, checks };
+  }
+
+  /**
+   * Reset all metrics
+   */
+  reset(): void {
+    this.metrics.clear();
+    logger.info('All metrics reset');
+  }
+
+  /**
+   * Get metrics summary
+   */
+  getSummary(): Record<string, unknown> {
+    const summary: Record<string, unknown> = {};
+
+    this.metrics.forEach((samples, name) => {
+      const stats = this.getMetricStats(name);
+      if (stats) {
+        summary[name] = {
+          count: stats.count,
+          avg: stats.avg.toFixed(2),
+          p95: stats.p95.toFixed(2),
+          p99: stats.p99.toFixed(2),
+        };
       }
-    } catch (error) {
-      logger.error('Cache health check failed:', error);
-    }
+    });
 
-    // Determine overall status
-    let status: SystemHealth['status'] = 'healthy';
-    if (!dbConnected || !cacheConnected || errorRate > 10 || avgResponseTime > 1000) {
-      status = 'degraded';
-    }
-    if (!dbConnected || errorRate > 50 || avgResponseTime > 5000) {
-      status = 'unhealthy';
-    }
-
-    return {
-      status,
-      uptime,
-      database: {
-        connected: dbConnected,
-        poolSize: this.db.totalCount,
-        activeQueries,
-      },
-      cache: {
-        connected: cacheConnected,
-        hitRate: this.getCacheHitRate(),
-        memoryUsage: cacheMemoryUsage,
-      },
-      api: {
-        requestsPerMinute: (this.requestCount / uptime) * 60,
-        averageResponseTime: avgResponseTime,
-        errorRate,
-      },
-    };
-  }
-
-  /**
-   * Get payment metrics from database
-   */
-  async getPaymentMetrics(period: 'hour' | 'day' | 'week' | 'month' = 'day') {
-    let interval: string;
-    let groupBy: string;
-
-    switch (period) {
-      case 'hour':
-        interval = '1 hour';
-        groupBy = 'minute';
-        break;
-      case 'day':
-        interval = '1 day';
-        groupBy = 'hour';
-        break;
-      case 'week':
-        interval = '7 days';
-        groupBy = 'day';
-        break;
-      case 'month':
-        interval = '30 days';
-        groupBy = 'day';
-        break;
-    }
-
-    const query = `
-      SELECT 
-        date_trunc($1, created_at) as period,
-        COUNT(*) as transaction_count,
-        SUM(amount::numeric)::text as total_volume,
-        AVG(amount::numeric)::text as avg_amount,
-        COUNT(*) FILTER (WHERE status = 'completed') as successful,
-        COUNT(*) FILTER (WHERE status = 'failed') as failed
-      FROM payments
-      WHERE created_at > NOW() - INTERVAL '${interval}'
-      GROUP BY date_trunc($1, created_at)
-      ORDER BY period ASC
-    `;
-
-    const result = await this.db.query(query, [groupBy]);
-    return result.rows;
-  }
-
-  /**
-   * Get real-time metrics
-   */
-  async getRealTimeMetrics() {
-    const [systemHealth, currentMetrics, topEndpoints, slowEndpoints] = await Promise.all([
-      this.getSystemHealth(),
-      Promise.resolve(this.getCurrentMetrics()),
-      Promise.resolve(this.getEndpointMetrics(5)),
-      Promise.resolve(this.getSlowestEndpoints(5)),
-    ]);
-
-    return {
-      system: systemHealth,
-      current: currentMetrics,
-      topEndpoints,
-      slowEndpoints,
-    };
-  }
-
-  /**
-   * Reset metrics
-   */
-  resetMetrics(): void {
-    this.requestCount = 0;
-    this.errorCount = 0;
-    this.cacheHits = 0;
-    this.cacheMisses = 0;
-    this.endpointMetrics.clear();
-    this.startTime = Date.now();
-  }
-
-  /**
-   * Export metrics for external monitoring
-   */
-  exportPrometheusMetrics(): string {
-    const metrics: string[] = [];
-
-    // API metrics
-    metrics.push(`# HELP api_requests_total Total number of API requests`);
-    metrics.push(`# TYPE api_requests_total counter`);
-    metrics.push(`api_requests_total ${this.requestCount}`);
-
-    metrics.push(`# HELP api_errors_total Total number of API errors`);
-    metrics.push(`# TYPE api_errors_total counter`);
-    metrics.push(`api_errors_total ${this.errorCount}`);
-
-    // Cache metrics
-    metrics.push(`# HELP cache_hits_total Total number of cache hits`);
-    metrics.push(`# TYPE cache_hits_total counter`);
-    metrics.push(`cache_hits_total ${this.cacheHits}`);
-
-    metrics.push(`# HELP cache_misses_total Total number of cache misses`);
-    metrics.push(`# TYPE cache_misses_total counter`);
-    metrics.push(`cache_misses_total ${this.cacheMisses}`);
-
-    // Memory metrics
-    const memUsage = process.memoryUsage();
-    metrics.push(`# HELP process_memory_bytes Process memory usage in bytes`);
-    metrics.push(`# TYPE process_memory_bytes gauge`);
-    metrics.push(`process_memory_bytes{type="rss"} ${memUsage.rss}`);
-    metrics.push(`process_memory_bytes{type="heapTotal"} ${memUsage.heapTotal}`);
-    metrics.push(`process_memory_bytes{type="heapUsed"} ${memUsage.heapUsed}`);
-
-    return metrics.join('\n');
-  }
-
-  /**
-   * Close connections
-   */
-  async close(): Promise<void> {
-    try {
-      await this.redis.quit();
-      logger.info('Metrics service closed');
-    } catch (error) {
-      logger.error('Error closing metrics service:', error);
-    }
+    return summary;
   }
 }
-
