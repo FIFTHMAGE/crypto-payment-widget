@@ -1,9 +1,9 @@
 /**
  * Webhook Controller
- * Handles webhook management and delivery
+ * Handles webhook-related HTTP requests
  */
 
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { EnhancedWebhookService } from '../services/EnhancedWebhookService';
 import { successResponse, errorResponse } from '../utils/response';
 import logger from '../utils/logger';
@@ -12,219 +12,231 @@ export class WebhookController {
   constructor(private webhookService: EnhancedWebhookService) {}
 
   /**
-   * Register a new webhook
+   * Create a new webhook
    */
-  async registerWebhook(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async createWebhook(req: Request, res: Response): Promise<void> {
     try {
       const { url, events, secret } = req.body;
-      const merchantId = req.user?.id;
+      const merchantId = req.user?.merchantId || req.user?.id;
 
       if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
+        res.status(401).json(errorResponse('Merchant ID not found'));
         return;
       }
 
-      if (!url) {
-        res.status(400).json(errorResponse('URL is required'));
-        return;
-      }
-
-      if (!events || !Array.isArray(events) || events.length === 0) {
-        res.status(400).json(errorResponse('Events array is required'));
-        return;
-      }
-
-      const webhookId = await this.webhookService.registerWebhook(
+      const webhook = await this.webhookService.registerWebhook({
         merchantId,
         url,
         events,
         secret,
-      );
-
-      res.status(201).json(
-        successResponse({ webhookId }, 'Webhook registered successfully'),
-      );
-    } catch (error) {
-      logger.error('Error registering webhook:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Get all webhooks for a merchant
-   */
-  async getWebhooks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const merchantId = req.user?.id;
-
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
-        return;
-      }
-
-      const webhooks = await this.webhookService.getMerchantWebhooks(merchantId);
-
-      res.json(successResponse(webhooks, 'Webhooks retrieved successfully'));
-    } catch (error) {
-      logger.error('Error getting webhooks:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Update a webhook
-   */
-  async updateWebhook(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const { webhookId } = req.params;
-      const { url, events, secret, active } = req.body;
-      const merchantId = req.user?.id;
-
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
-        return;
-      }
-
-      await this.webhookService.updateWebhook(webhookId, {
-        url,
-        events,
-        secret,
-        active,
       });
 
-      res.json(successResponse(null, 'Webhook updated successfully'));
+      res.status(201).json(successResponse(webhook, 'Webhook created successfully'));
     } catch (error) {
-      logger.error('Error updating webhook:', error);
-      next(error);
+      logger.error('Error creating webhook:', error);
+      res.status(500).json(errorResponse('Failed to create webhook'));
     }
   }
 
   /**
-   * Delete a webhook
+   * Get all webhooks
    */
-  async deleteWebhook(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getWebhooks(req: Request, res: Response): Promise<void> {
     try {
-      const { webhookId } = req.params;
-      const merchantId = req.user?.id;
+      const merchantId = req.user?.merchantId || req.user?.id;
 
       if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
+        res.status(401).json(errorResponse('Merchant ID not found'));
         return;
       }
 
-      await this.webhookService.deleteWebhook(webhookId, merchantId);
+      const webhooks = await this.webhookService.getWebhooksByMerchant(merchantId);
+      res.json(successResponse(webhooks));
+    } catch (error) {
+      logger.error('Error fetching webhooks:', error);
+      res.status(500).json(errorResponse('Failed to fetch webhooks'));
+    }
+  }
 
+  /**
+   * Get webhook by ID
+   */
+  async getWebhook(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const merchantId = req.user?.merchantId || req.user?.id;
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        res.status(404).json(errorResponse('Webhook not found'));
+        return;
+      }
+
+      if (webhook.merchantId !== merchantId) {
+        res.status(403).json(errorResponse('Access denied'));
+        return;
+      }
+
+      res.json(successResponse(webhook));
+    } catch (error) {
+      logger.error('Error fetching webhook:', error);
+      res.status(500).json(errorResponse('Failed to fetch webhook'));
+    }
+  }
+
+  /**
+   * Update webhook
+   */
+  async updateWebhook(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const merchantId = req.user?.merchantId || req.user?.id;
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        res.status(404).json(errorResponse('Webhook not found'));
+        return;
+      }
+
+      if (webhook.merchantId !== merchantId) {
+        res.status(403).json(errorResponse('Access denied'));
+        return;
+      }
+
+      const updated = await this.webhookService.updateWebhook(id, updates);
+      res.json(successResponse(updated, 'Webhook updated successfully'));
+    } catch (error) {
+      logger.error('Error updating webhook:', error);
+      res.status(500).json(errorResponse('Failed to update webhook'));
+    }
+  }
+
+  /**
+   * Delete webhook
+   */
+  async deleteWebhook(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const merchantId = req.user?.merchantId || req.user?.id;
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        res.status(404).json(errorResponse('Webhook not found'));
+        return;
+      }
+
+      if (webhook.merchantId !== merchantId) {
+        res.status(403).json(errorResponse('Access denied'));
+        return;
+      }
+
+      await this.webhookService.deleteWebhook(id);
       res.json(successResponse(null, 'Webhook deleted successfully'));
     } catch (error) {
       logger.error('Error deleting webhook:', error);
-      next(error);
+      res.status(500).json(errorResponse('Failed to delete webhook'));
     }
   }
 
   /**
-   * Get webhook delivery history
+   * Test webhook
    */
-  async getDeliveryHistory(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async testWebhook(req: Request, res: Response): Promise<void> {
     try {
-      const { webhookId } = req.params;
-      const { page = '0', limit = '20' } = req.query;
-      const merchantId = req.user?.id;
+      const { id } = req.params;
+      const merchantId = req.user?.merchantId || req.user?.id;
 
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        res.status(404).json(errorResponse('Webhook not found'));
         return;
       }
 
-      const history = await this.webhookService.getDeliveryHistory(
-        webhookId,
-        parseInt(page as string, 10),
-        parseInt(limit as string, 10),
-      );
+      if (webhook.merchantId !== merchantId) {
+        res.status(403).json(errorResponse('Access denied'));
+        return;
+      }
 
-      res.json(successResponse(history, 'Delivery history retrieved successfully'));
+      const testEvent = {
+        event: 'test',
+        timestamp: new Date().toISOString(),
+        data: {
+          message: 'This is a test webhook event',
+        },
+      };
+
+      await this.webhookService.sendWebhook(webhook, testEvent);
+      res.json(successResponse(null, 'Test webhook sent successfully'));
     } catch (error) {
-      logger.error('Error getting delivery history:', error);
-      next(error);
+      logger.error('Error testing webhook:', error);
+      res.status(500).json(errorResponse('Failed to send test webhook'));
     }
   }
 
   /**
-   * Retry failed webhook delivery
+   * Get webhook deliveries
    */
-  async retryDelivery(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async getDeliveries(req: Request, res: Response): Promise<void> {
     try {
-      const { deliveryId } = req.params;
-      const merchantId = req.user?.id;
+      const { id } = req.params;
+      const { limit = '50', offset = '0' } = req.query;
+      const merchantId = req.user?.merchantId || req.user?.id;
 
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        res.status(404).json(errorResponse('Webhook not found'));
+        return;
+      }
+
+      if (webhook.merchantId !== merchantId) {
+        res.status(403).json(errorResponse('Access denied'));
+        return;
+      }
+
+      const deliveries = await this.webhookService.getDeliveryHistory(
+        id,
+        parseInt(limit as string),
+        parseInt(offset as string),
+      );
+
+      res.json(successResponse(deliveries));
+    } catch (error) {
+      logger.error('Error fetching webhook deliveries:', error);
+      res.status(500).json(errorResponse('Failed to fetch deliveries'));
+    }
+  }
+
+  /**
+   * Retry failed delivery
+   */
+  async retryDelivery(req: Request, res: Response): Promise<void> {
+    try {
+      const { id, deliveryId } = req.params;
+      const merchantId = req.user?.merchantId || req.user?.id;
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        res.status(404).json(errorResponse('Webhook not found'));
+        return;
+      }
+
+      if (webhook.merchantId !== merchantId) {
+        res.status(403).json(errorResponse('Access denied'));
         return;
       }
 
       await this.webhookService.retryDelivery(deliveryId);
-
-      res.json(successResponse(null, 'Retry initiated successfully'));
+      res.json(successResponse(null, 'Delivery retry initiated'));
     } catch (error) {
-      logger.error('Error retrying delivery:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Test webhook endpoint
-   */
-  async testWebhook(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const { webhookId } = req.params;
-      const merchantId = req.user?.id;
-
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
-        return;
-      }
-
-      const testPayload = {
-        event: 'test',
-        data: {
-          message: 'This is a test webhook delivery',
-          timestamp: new Date().toISOString(),
-        },
-      };
-
-      const result = await this.webhookService.sendWebhook(webhookId, testPayload);
-
-      res.json(
-        successResponse(
-          { success: result.success, response: result.response },
-          result.success ? 'Test webhook delivered successfully' : 'Test webhook failed',
-        ),
-      );
-    } catch (error) {
-      logger.error('Error testing webhook:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Get webhook statistics
-   */
-  async getWebhookStats(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const { webhookId } = req.params;
-      const merchantId = req.user?.id;
-
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Unauthorized'));
-        return;
-      }
-
-      const stats = await this.webhookService.getWebhookStats(webhookId);
-
-      res.json(successResponse(stats, 'Webhook statistics retrieved successfully'));
-    } catch (error) {
-      logger.error('Error getting webhook stats:', error);
-      next(error);
+      logger.error('Error retrying webhook delivery:', error);
+      res.status(500).json(errorResponse('Failed to retry delivery'));
     }
   }
 }
-
