@@ -1,196 +1,92 @@
 /**
- * BlockchainService - Blockchain interaction service
+ * Blockchain service - Interact with blockchain networks
  * @module services
  */
 
 import { ethers } from 'ethers';
 import { Logger } from '../utils/logger';
-
-export interface BlockchainConfig {
-  rpcUrl: string;
-  chainId: number;
-  confirmations?: number;
-}
-
-export interface TransactionReceipt {
-  hash: string;
-  from: string;
-  to: string;
-  blockNumber: number;
-  gasUsed: string;
-  status: boolean;
-  timestamp: number;
-}
+import { env } from '../config/environment';
 
 export class BlockchainService {
   private logger: Logger;
-  private provider: ethers.JsonRpcProvider;
-  private chainId: number;
-  private requiredConfirmations: number;
+  private providers: Map<string, ethers.JsonRpcProvider>;
 
-  constructor(config: BlockchainConfig) {
+  constructor() {
     this.logger = new Logger('BlockchainService');
-    this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    this.chainId = config.chainId;
-    this.requiredConfirmations = config.confirmations || 3;
-    this.logger.info(`BlockchainService initialized for chain ${config.chainId}`);
+    this.providers = new Map();
+    this.initializeProviders();
   }
 
-  /**
-   * Get transaction receipt
-   */
-  async getTransactionReceipt(txHash: string): Promise<TransactionReceipt | null> {
-    try {
-      const receipt = await this.provider.getTransactionReceipt(txHash);
-      if (!receipt) return null;
+  private initializeProviders(): void {
+    const networks = [
+      { name: 'ethereum', rpcUrl: env.ETHEREUM_RPC_URL },
+      { name: 'polygon', rpcUrl: env.POLYGON_RPC_URL },
+      { name: 'bsc', rpcUrl: env.BSC_RPC_URL },
+    ];
 
-      const block = await this.provider.getBlock(receipt.blockNumber);
-      if (!block) return null;
-
-      return {
-        hash: receipt.hash,
-        from: receipt.from,
-        to: receipt.to || '',
-        blockNumber: receipt.blockNumber,
-        gasUsed: receipt.gasUsed.toString(),
-        status: receipt.status === 1,
-        timestamp: block.timestamp,
-      };
-    } catch (error: any) {
-      this.logger.error(`Error getting transaction receipt for ${txHash}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Wait for transaction confirmation
-   */
-  async waitForTransaction(txHash: string): Promise<TransactionReceipt> {
-    try {
-      this.logger.info(`Waiting for transaction ${txHash} to be confirmed`);
-      const receipt = await this.provider.waitForTransaction(txHash, this.requiredConfirmations);
-      
-      if (!receipt) {
-        throw new Error('Transaction receipt not found');
+    networks.forEach(({ name, rpcUrl }) => {
+      if (rpcUrl) {
+        this.providers.set(name, new ethers.JsonRpcProvider(rpcUrl));
+        this.logger.info(`Initialized ${name} provider`);
       }
+    });
+  }
 
-      const block = await this.provider.getBlock(receipt.blockNumber);
-      if (!block) {
-        throw new Error('Block not found');
-      }
+  public getProvider(network: string): ethers.JsonRpcProvider {
+    const provider = this.providers.get(network);
+    if (!provider) {
+      throw new Error(`Provider not found for network: ${network}`);
+    }
+    return provider;
+  }
 
-      return {
-        hash: receipt.hash,
-        from: receipt.from,
-        to: receipt.to || '',
-        blockNumber: receipt.blockNumber,
-        gasUsed: receipt.gasUsed.toString(),
-        status: receipt.status === 1,
-        timestamp: block.timestamp,
-      };
-    } catch (error: any) {
-      this.logger.error(`Error waiting for transaction ${txHash}:`, error);
-      throw error;
+  public async getBalance(network: string, address: string): Promise<string> {
+    const provider = this.getProvider(network);
+    const balance = await provider.getBalance(address);
+    return ethers.formatEther(balance);
+  }
+
+  public async getTransaction(network: string, txHash: string): Promise<ethers.TransactionResponse | null> {
+    const provider = this.getProvider(network);
+    return await provider.getTransaction(txHash);
+  }
+
+  public async getTransactionReceipt(
+    network: string,
+    txHash: string
+  ): Promise<ethers.TransactionReceipt | null> {
+    const provider = this.getProvider(network);
+    return await provider.getTransactionReceipt(txHash);
+  }
+
+  public async waitForTransaction(network: string, txHash: string, confirmations: number = 1): Promise<void> {
+    const provider = this.getProvider(network);
+    const receipt = await provider.waitForTransaction(txHash, confirmations);
+
+    if (!receipt) {
+      throw new Error('Transaction receipt not found');
+    }
+
+    if (receipt.status === 0) {
+      throw new Error('Transaction failed');
     }
   }
 
-  /**
-   * Get current block number
-   */
-  async getBlockNumber(): Promise<number> {
-    try {
-      return await this.provider.getBlockNumber();
-    } catch (error: any) {
-      this.logger.error('Error getting block number:', error);
-      throw error;
-    }
+  public async getCurrentBlock(network: string): Promise<number> {
+    const provider = this.getProvider(network);
+    return await provider.getBlockNumber();
   }
 
-  /**
-   * Get balance
-   */
-  async getBalance(address: string): Promise<string> {
-    try {
-      const balance = await this.provider.getBalance(address);
-      return ethers.formatEther(balance);
-    } catch (error: any) {
-      this.logger.error(`Error getting balance for ${address}:`, error);
-      throw error;
-    }
+  public async estimateGas(network: string, tx: ethers.TransactionRequest): Promise<bigint> {
+    const provider = this.getProvider(network);
+    return await provider.estimateGas(tx);
   }
 
-  /**
-   * Get ERC20 token balance
-   */
-  async getTokenBalance(tokenAddress: string, userAddress: string): Promise<string> {
-    try {
-      const tokenAbi = [
-        'function balanceOf(address) view returns (uint256)',
-        'function decimals() view returns (uint8)',
-      ];
-      const contract = new ethers.Contract(tokenAddress, tokenAbi, this.provider);
-      const [balance, decimals] = await Promise.all([
-        contract.balanceOf(userAddress),
-        contract.decimals(),
-      ]);
-      return ethers.formatUnits(balance, decimals);
-    } catch (error: any) {
-      this.logger.error(`Error getting token balance for ${userAddress}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get gas price
-   */
-  async getGasPrice(): Promise<string> {
-    try {
-      const feeData = await this.provider.getFeeData();
-      return ethers.formatUnits(feeData.gasPrice || 0, 'gwei');
-    } catch (error: any) {
-      this.logger.error('Error getting gas price:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Estimate gas
-   */
-  async estimateGas(transaction: ethers.TransactionRequest): Promise<string> {
-    try {
-      const estimate = await this.provider.estimateGas(transaction);
-      return estimate.toString();
-    } catch (error: any) {
-      this.logger.error('Error estimating gas:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check if address is contract
-   */
-  async isContract(address: string): Promise<boolean> {
-    try {
-      const code = await this.provider.getCode(address);
-      return code !== '0x';
-    } catch (error: any) {
-      this.logger.error(`Error checking if ${address} is contract:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Get chain ID
-   */
-  getChainId(): number {
-    return this.chainId;
-  }
-
-  /**
-   * Get provider
-   */
-  getProvider(): ethers.JsonRpcProvider {
-    return this.provider;
+  public async getGasPrice(network: string): Promise<bigint> {
+    const provider = this.getProvider(network);
+    const feeData = await provider.getFeeData();
+    return feeData.gasPrice || 0n;
   }
 }
 
+export const blockchainService = new BlockchainService();
