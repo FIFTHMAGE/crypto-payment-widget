@@ -1,242 +1,397 @@
 /**
  * Webhook Controller
- * Handles webhook-related HTTP requests
+ * Handles webhook registration, delivery, and management
  */
 
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { EnhancedWebhookService } from '../services/EnhancedWebhookService';
-import { successResponse, errorResponse } from '../utils/response';
+import { sendSuccessResponse, sendErrorResponse } from '../utils/response';
 import logger from '../utils/logger';
 
 export class WebhookController {
-  constructor(private webhookService: EnhancedWebhookService) {}
+  private static instance: WebhookController;
+  private webhookService: EnhancedWebhookService;
+
+  private constructor() {
+    this.webhookService = EnhancedWebhookService.getInstance();
+    logger.info('WebhookController initialized.');
+  }
+
+  public static getInstance(): WebhookController {
+    if (!WebhookController.instance) {
+      WebhookController.instance = new WebhookController();
+    }
+    return WebhookController.instance;
+  }
 
   /**
-   * Create a new webhook
+   * POST /api/webhooks
+   * Register a new webhook endpoint
    */
-  async createWebhook(req: Request, res: Response): Promise<void> {
+  public registerWebhook = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     try {
-      const { url, events, secret } = req.body;
-      const merchantId = req.user?.merchantId || req.user?.id;
+      const { url, events, secret, description } = req.body;
+      const merchantId = req.user?.id;
 
       if (!merchantId) {
-        res.status(401).json(errorResponse('Merchant ID not found'));
+        sendErrorResponse(res, 401, 'Authentication required');
         return;
       }
 
-      const webhook = await this.webhookService.registerWebhook({
+      logger.debug(`Registering webhook for merchant ${merchantId}: ${url}`);
+
+      const webhookId = await this.webhookService.registerWebhook({
+        url,
+        events: events || ['payment.*'],
         merchantId,
+        secret,
+        description,
+      });
+
+      sendSuccessResponse(res, 201, 'Webhook registered successfully', {
+        id: webhookId,
+        url,
+        events,
+      });
+    } catch (error) {
+      logger.error('Error registering webhook:', error);
+      sendErrorResponse(res, 500, 'Failed to register webhook', error);
+    }
+  };
+
+  /**
+   * GET /api/webhooks
+   * List all webhooks for a merchant
+   */
+  public listWebhooks = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Listing webhooks for merchant ${merchantId}`);
+
+      const webhooks = await this.webhookService.getWebhooksByMerchant(merchantId);
+
+      sendSuccessResponse(res, 200, 'Webhooks retrieved successfully', webhooks);
+    } catch (error) {
+      logger.error('Error listing webhooks:', error);
+      sendErrorResponse(res, 500, 'Failed to retrieve webhooks', error);
+    }
+  };
+
+  /**
+   * GET /api/webhooks/:id
+   * Get webhook details
+   */
+  public getWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Fetching webhook ${id} for merchant ${merchantId}`);
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        sendErrorResponse(res, 404, 'Webhook not found');
+        return;
+      }
+
+      // Verify ownership
+      if (webhook.merchantId !== merchantId) {
+        sendErrorResponse(res, 403, 'Access denied');
+        return;
+      }
+
+      sendSuccessResponse(res, 200, 'Webhook retrieved successfully', webhook);
+    } catch (error) {
+      logger.error('Error fetching webhook:', error);
+      sendErrorResponse(res, 500, 'Failed to retrieve webhook', error);
+    }
+  };
+
+  /**
+   * PUT /api/webhooks/:id
+   * Update webhook configuration
+   */
+  public updateWebhook = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { url, events, secret, description, enabled } = req.body;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Updating webhook ${id} for merchant ${merchantId}`);
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        sendErrorResponse(res, 404, 'Webhook not found');
+        return;
+      }
+
+      // Verify ownership
+      if (webhook.merchantId !== merchantId) {
+        sendErrorResponse(res, 403, 'Access denied');
+        return;
+      }
+
+      await this.webhookService.updateWebhook(id, {
         url,
         events,
         secret,
+        description,
+        enabled,
       });
 
-      res.status(201).json(successResponse(webhook, 'Webhook created successfully'));
-    } catch (error) {
-      logger.error('Error creating webhook:', error);
-      res.status(500).json(errorResponse('Failed to create webhook'));
-    }
-  }
-
-  /**
-   * Get all webhooks
-   */
-  async getWebhooks(req: Request, res: Response): Promise<void> {
-    try {
-      const merchantId = req.user?.merchantId || req.user?.id;
-
-      if (!merchantId) {
-        res.status(401).json(errorResponse('Merchant ID not found'));
-        return;
-      }
-
-      const webhooks = await this.webhookService.getWebhooksByMerchant(merchantId);
-      res.json(successResponse(webhooks));
-    } catch (error) {
-      logger.error('Error fetching webhooks:', error);
-      res.status(500).json(errorResponse('Failed to fetch webhooks'));
-    }
-  }
-
-  /**
-   * Get webhook by ID
-   */
-  async getWebhook(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const merchantId = req.user?.merchantId || req.user?.id;
-
-      const webhook = await this.webhookService.getWebhook(id);
-
-      if (!webhook) {
-        res.status(404).json(errorResponse('Webhook not found'));
-        return;
-      }
-
-      if (webhook.merchantId !== merchantId) {
-        res.status(403).json(errorResponse('Access denied'));
-        return;
-      }
-
-      res.json(successResponse(webhook));
-    } catch (error) {
-      logger.error('Error fetching webhook:', error);
-      res.status(500).json(errorResponse('Failed to fetch webhook'));
-    }
-  }
-
-  /**
-   * Update webhook
-   */
-  async updateWebhook(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const updates = req.body;
-      const merchantId = req.user?.merchantId || req.user?.id;
-
-      const webhook = await this.webhookService.getWebhook(id);
-
-      if (!webhook) {
-        res.status(404).json(errorResponse('Webhook not found'));
-        return;
-      }
-
-      if (webhook.merchantId !== merchantId) {
-        res.status(403).json(errorResponse('Access denied'));
-        return;
-      }
-
-      const updated = await this.webhookService.updateWebhook(id, updates);
-      res.json(successResponse(updated, 'Webhook updated successfully'));
+      sendSuccessResponse(res, 200, 'Webhook updated successfully', { id });
     } catch (error) {
       logger.error('Error updating webhook:', error);
-      res.status(500).json(errorResponse('Failed to update webhook'));
+      sendErrorResponse(res, 500, 'Failed to update webhook', error);
     }
-  }
+  };
 
   /**
-   * Delete webhook
+   * DELETE /api/webhooks/:id
+   * Delete a webhook
    */
-  async deleteWebhook(req: Request, res: Response): Promise<void> {
+  public deleteWebhook = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     try {
       const { id } = req.params;
-      const merchantId = req.user?.merchantId || req.user?.id;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Deleting webhook ${id} for merchant ${merchantId}`);
 
       const webhook = await this.webhookService.getWebhook(id);
 
       if (!webhook) {
-        res.status(404).json(errorResponse('Webhook not found'));
+        sendErrorResponse(res, 404, 'Webhook not found');
         return;
       }
 
+      // Verify ownership
       if (webhook.merchantId !== merchantId) {
-        res.status(403).json(errorResponse('Access denied'));
+        sendErrorResponse(res, 403, 'Access denied');
         return;
       }
 
       await this.webhookService.deleteWebhook(id);
-      res.json(successResponse(null, 'Webhook deleted successfully'));
+
+      sendSuccessResponse(res, 200, 'Webhook deleted successfully', { id });
     } catch (error) {
       logger.error('Error deleting webhook:', error);
-      res.status(500).json(errorResponse('Failed to delete webhook'));
+      sendErrorResponse(res, 500, 'Failed to delete webhook', error);
     }
-  }
+  };
 
   /**
-   * Test webhook
+   * POST /api/webhooks/:id/test
+   * Send a test webhook event
    */
-  async testWebhook(req: Request, res: Response): Promise<void> {
+  public testWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { id } = req.params;
-      const merchantId = req.user?.merchantId || req.user?.id;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Testing webhook ${id} for merchant ${merchantId}`);
 
       const webhook = await this.webhookService.getWebhook(id);
 
       if (!webhook) {
-        res.status(404).json(errorResponse('Webhook not found'));
+        sendErrorResponse(res, 404, 'Webhook not found');
         return;
       }
 
+      // Verify ownership
       if (webhook.merchantId !== merchantId) {
-        res.status(403).json(errorResponse('Access denied'));
+        sendErrorResponse(res, 403, 'Access denied');
         return;
       }
 
-      const testEvent = {
-        event: 'test',
-        timestamp: new Date().toISOString(),
-        data: {
-          message: 'This is a test webhook event',
+      // Send test event
+      await this.webhookService.sendEvent(
+        {
+          type: 'webhook.test',
+          data: {
+            message: 'This is a test webhook event',
+            timestamp: new Date().toISOString(),
+            webhookId: id,
+          },
+          timestamp: new Date(),
         },
-      };
+        [id],
+      );
 
-      await this.webhookService.sendWebhook(webhook, testEvent);
-      res.json(successResponse(null, 'Test webhook sent successfully'));
+      sendSuccessResponse(res, 200, 'Test webhook sent successfully');
     } catch (error) {
       logger.error('Error testing webhook:', error);
-      res.status(500).json(errorResponse('Failed to send test webhook'));
+      sendErrorResponse(res, 500, 'Failed to send test webhook', error);
     }
-  }
+  };
 
   /**
-   * Get webhook deliveries
+   * GET /api/webhooks/:id/deliveries
+   * Get webhook delivery history
    */
-  async getDeliveries(req: Request, res: Response): Promise<void> {
+  public getWebhookDeliveries = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     try {
       const { id } = req.params;
       const { limit = '50', offset = '0' } = req.query;
-      const merchantId = req.user?.merchantId || req.user?.id;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Fetching webhook deliveries for ${id}`);
 
       const webhook = await this.webhookService.getWebhook(id);
 
       if (!webhook) {
-        res.status(404).json(errorResponse('Webhook not found'));
+        sendErrorResponse(res, 404, 'Webhook not found');
         return;
       }
 
+      // Verify ownership
       if (webhook.merchantId !== merchantId) {
-        res.status(403).json(errorResponse('Access denied'));
+        sendErrorResponse(res, 403, 'Access denied');
         return;
       }
 
       const deliveries = await this.webhookService.getDeliveryHistory(
         id,
-        parseInt(limit as string),
-        parseInt(offset as string),
+        parseInt(limit as string, 10),
+        parseInt(offset as string, 10),
       );
 
-      res.json(successResponse(deliveries));
+      sendSuccessResponse(res, 200, 'Webhook deliveries retrieved successfully', deliveries);
     } catch (error) {
       logger.error('Error fetching webhook deliveries:', error);
-      res.status(500).json(errorResponse('Failed to fetch deliveries'));
+      sendErrorResponse(res, 500, 'Failed to retrieve webhook deliveries', error);
     }
-  }
+  };
 
   /**
-   * Retry failed delivery
+   * POST /api/webhooks/:id/retry/:deliveryId
+   * Retry a failed webhook delivery
    */
-  async retryDelivery(req: Request, res: Response): Promise<void> {
+  public retryWebhookDelivery = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     try {
       const { id, deliveryId } = req.params;
-      const merchantId = req.user?.merchantId || req.user?.id;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Retrying webhook delivery ${deliveryId} for webhook ${id}`);
 
       const webhook = await this.webhookService.getWebhook(id);
 
       if (!webhook) {
-        res.status(404).json(errorResponse('Webhook not found'));
+        sendErrorResponse(res, 404, 'Webhook not found');
         return;
       }
 
+      // Verify ownership
       if (webhook.merchantId !== merchantId) {
-        res.status(403).json(errorResponse('Access denied'));
+        sendErrorResponse(res, 403, 'Access denied');
         return;
       }
 
       await this.webhookService.retryDelivery(deliveryId);
-      res.json(successResponse(null, 'Delivery retry initiated'));
+
+      sendSuccessResponse(res, 200, 'Webhook delivery retry initiated');
     } catch (error) {
       logger.error('Error retrying webhook delivery:', error);
-      res.status(500).json(errorResponse('Failed to retry delivery'));
+      sendErrorResponse(res, 500, 'Failed to retry webhook delivery', error);
     }
-  }
+  };
+
+  /**
+   * GET /api/webhooks/:id/stats
+   * Get webhook statistics
+   */
+  public getWebhookStats = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const merchantId = req.user?.id;
+
+      if (!merchantId) {
+        sendErrorResponse(res, 401, 'Authentication required');
+        return;
+      }
+
+      logger.debug(`Fetching webhook stats for ${id}`);
+
+      const webhook = await this.webhookService.getWebhook(id);
+
+      if (!webhook) {
+        sendErrorResponse(res, 404, 'Webhook not found');
+        return;
+      }
+
+      // Verify ownership
+      if (webhook.merchantId !== merchantId) {
+        sendErrorResponse(res, 403, 'Access denied');
+        return;
+      }
+
+      const stats = await this.webhookService.getWebhookStats(id);
+
+      sendSuccessResponse(res, 200, 'Webhook statistics retrieved successfully', stats);
+    } catch (error) {
+      logger.error('Error fetching webhook stats:', error);
+      sendErrorResponse(res, 500, 'Failed to retrieve webhook statistics', error);
+    }
+  };
 }
