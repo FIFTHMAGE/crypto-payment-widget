@@ -1,29 +1,69 @@
 /**
- * Environment Configuration
+ * Environment configuration
  * @module config
  */
 
-export interface EnvironmentConfig {
-  nodeEnv: string;
-  port: number;
-  jwtSecret: string;
-  jwtExpiresIn: string;
-  allowedOrigins: string[];
-  logLevel: string;
-  platformFee: number;
+import dotenv from 'dotenv';
+import { Logger } from '../utils/logger';
+
+dotenv.config();
+
+const logger = new Logger('Environment');
+
+interface EnvironmentConfig {
+  NODE_ENV: string;
+  PORT: number;
+  CORS_ORIGIN: string;
+  DB_HOST: string;
+  DB_PORT: number;
+  DB_USER: string;
+  DB_PASSWORD: string;
+  DB_NAME: string;
+  REDIS_HOST: string;
+  REDIS_PORT: number;
+  REDIS_PASSWORD: string;
+  REDIS_DB: number;
+  JWT_SECRET: string;
+  API_KEYS: Record<string, { id: string; role: string }>;
 }
 
-export const environment: EnvironmentConfig = {
-  nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '3001'),
-  jwtSecret: process.env.JWT_SECRET || 'change_this_in_production',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1h',
-  allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
-  logLevel: process.env.LOG_LEVEL || 'info',
-  platformFee: parseInt(process.env.PLATFORM_FEE || '250'),
-};
+function validateEnv(): EnvironmentConfig {
+  const requiredVars = [
+    'NODE_ENV',
+    'PORT',
+    'DB_HOST',
+    'DB_USER',
+    'DB_PASSWORD',
+    'DB_NAME',
+    'REDIS_HOST',
+    'JWT_SECRET',
+  ];
 
-export const isDevelopment = environment.nodeEnv === 'development';
-export const isProduction = environment.nodeEnv === 'production';
-export const isTest = environment.nodeEnv === 'test';
+  const missing = requiredVars.filter((varName) => !process.env[varName]);
 
+  if (missing.length > 0) {
+    logger.critical(`Missing required environment variables: ${missing.join(', ')}`);
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
+  return {
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    PORT: parseInt(process.env.PORT || '3000', 10),
+    CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
+    DB_HOST: process.env.DB_HOST!,
+    DB_PORT: parseInt(process.env.DB_PORT || '5432', 10),
+    DB_USER: process.env.DB_USER!,
+    DB_PASSWORD: process.env.DB_PASSWORD!,
+    DB_NAME: process.env.DB_NAME!,
+    REDIS_HOST: process.env.REDIS_HOST || 'localhost',
+    REDIS_PORT: parseInt(process.env.REDIS_PORT || '6379', 10),
+    REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
+    REDIS_DB: parseInt(process.env.REDIS_DB || '0', 10),
+    JWT_SECRET: process.env.JWT_SECRET!,
+    API_KEYS: JSON.parse(process.env.API_KEYS || '{}'),
+  };
+}
+
+export const env = validateEnv();
+
+logger.info(`Environment loaded: ${env.NODE_ENV}`);
