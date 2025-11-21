@@ -1,181 +1,204 @@
 /**
  * Security Headers Middleware
- * Sets security-related HTTP headers
+ * Adds security-related HTTP headers to responses
  */
 
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
 
-export interface SecurityHeadersConfig {
-  hsts?: {
+export interface SecurityHeadersOptions {
+  contentSecurityPolicy?: boolean | string;
+  strictTransportSecurity?: boolean | {
     maxAge?: number;
     includeSubDomains?: boolean;
     preload?: boolean;
   };
-  contentSecurityPolicy?: {
-    directives?: Record<string, string[]>;
-  };
-  xFrameOptions?: 'DENY' | 'SAMEORIGIN';
+  xFrameOptions?: 'DENY' | 'SAMEORIGIN' | string;
   xContentTypeOptions?: boolean;
+  xXssProtection?: boolean | string;
   referrerPolicy?: string;
-  permissionsPolicy?: Record<string, string[]>;
+  permissionsPolicy?: string;
 }
 
-const DEFAULT_CONFIG: SecurityHeadersConfig = {
-  hsts: {
-    maxAge: 31536000, // 1 year
-    includeSubDomains: true,
-    preload: true,
-  },
-  contentSecurityPolicy: {
-    directives: {
-      'default-src': ["'self'"],
-      'script-src': ["'self'", "'unsafe-inline'"],
-      'style-src': ["'self'", "'unsafe-inline'"],
-      'img-src': ["'self'", 'data:', 'https:'],
-      'font-src': ["'self'", 'data:'],
-      'connect-src': ["'self'"],
-      'frame-ancestors': ["'none'"],
-      'base-uri': ["'self'"],
-      'form-action': ["'self'"],
-    },
-  },
-  xFrameOptions: 'DENY',
-  xContentTypeOptions: true,
-  referrerPolicy: 'strict-origin-when-cross-origin',
-  permissionsPolicy: {
-    camera: [],
-    microphone: [],
-    geolocation: [],
-    'payment': ["'self'"],
-  },
-};
-
 export class SecurityHeadersMiddleware {
-  private config: SecurityHeadersConfig;
-
-  constructor(config: Partial<SecurityHeadersConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
-  }
+  private static defaultOptions: SecurityHeadersOptions = {
+    contentSecurityPolicy: true,
+    strictTransportSecurity: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true,
+    },
+    xFrameOptions: 'DENY',
+    xContentTypeOptions: true,
+    xXssProtection: true,
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    permissionsPolicy: 'geolocation=(), microphone=(), camera=()',
+  };
 
   /**
    * Apply security headers middleware
    */
-  public middleware = (req: Request, res: Response, next: NextFunction): void => {
-    try {
-      // Strict-Transport-Security (HSTS)
-      if (this.config.hsts) {
-        const hsts = this.buildHSTSHeader(this.config.hsts);
-        res.setHeader('Strict-Transport-Security', hsts);
+  public static applyHeaders(options: SecurityHeadersOptions = {}) {
+    const config = { ...SecurityHeadersMiddleware.defaultOptions, ...options };
+
+    return (req: Request, res: Response, next: NextFunction) => {
+      try {
+        // Content Security Policy
+        if (config.contentSecurityPolicy) {
+          const csp =
+            typeof config.contentSecurityPolicy === 'string'
+              ? config.contentSecurityPolicy
+              : [
+                  "default-src 'self'",
+                  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+                  "style-src 'self' 'unsafe-inline'",
+                  "img-src 'self' data: https:",
+                  "font-src 'self' data:",
+                  "connect-src 'self'",
+                  "frame-ancestors 'none'",
+                  "base-uri 'self'",
+                  "form-action 'self'",
+                ].join('; ');
+
+          res.setHeader('Content-Security-Policy', csp);
+        }
+
+        // Strict Transport Security (HSTS)
+        if (config.strictTransportSecurity) {
+          const hsts =
+            typeof config.strictTransportSecurity === 'object'
+              ? [
+                  `max-age=${config.strictTransportSecurity.maxAge || 31536000}`,
+                  config.strictTransportSecurity.includeSubDomains ? 'includeSubDomains' : '',
+                  config.strictTransportSecurity.preload ? 'preload' : '',
+                ]
+                  .filter(Boolean)
+                  .join('; ')
+              : 'max-age=31536000; includeSubDomains; preload';
+
+          res.setHeader('Strict-Transport-Security', hsts);
+        }
+
+        // X-Frame-Options
+        if (config.xFrameOptions) {
+          res.setHeader('X-Frame-Options', config.xFrameOptions);
+        }
+
+        // X-Content-Type-Options
+        if (config.xContentTypeOptions) {
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+        }
+
+        // X-XSS-Protection
+        if (config.xXssProtection) {
+          const xssProtection =
+            typeof config.xXssProtection === 'string'
+              ? config.xXssProtection
+              : '1; mode=block';
+
+          res.setHeader('X-XSS-Protection', xssProtection);
+        }
+
+        // Referrer-Policy
+        if (config.referrerPolicy) {
+          res.setHeader('Referrer-Policy', config.referrerPolicy);
+        }
+
+        // Permissions-Policy
+        if (config.permissionsPolicy) {
+          res.setHeader('Permissions-Policy', config.permissionsPolicy);
+        }
+
+        // Additional security headers
+        res.setHeader('X-DNS-Prefetch-Control', 'off');
+        res.setHeader('X-Download-Options', 'noopen');
+        res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+
+        // Remove potentially sensitive headers
+        res.removeHeader('X-Powered-By');
+
+        next();
+      } catch (error) {
+        logger.error('Error applying security headers:', error);
+        next(error);
       }
+    };
+  }
 
-      // Content-Security-Policy
-      if (this.config.contentSecurityPolicy) {
-        const csp = this.buildCSPHeader(this.config.contentSecurityPolicy.directives || {});
-        res.setHeader('Content-Security-Policy', csp);
-      }
-
-      // X-Frame-Options
-      if (this.config.xFrameOptions) {
-        res.setHeader('X-Frame-Options', this.config.xFrameOptions);
-      }
-
-      // X-Content-Type-Options
-      if (this.config.xContentTypeOptions) {
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-      }
-
-      // X-XSS-Protection (legacy but still useful)
-      res.setHeader('X-XSS-Protection', '1; mode=block');
-
-      // Referrer-Policy
-      if (this.config.referrerPolicy) {
-        res.setHeader('Referrer-Policy', this.config.referrerPolicy);
-      }
-
-      // Permissions-Policy (formerly Feature-Policy)
-      if (this.config.permissionsPolicy) {
-        const permissionsPolicy = this.buildPermissionsPolicyHeader(
-          this.config.permissionsPolicy,
-        );
-        res.setHeader('Permissions-Policy', permissionsPolicy);
-      }
-
-      // X-Permitted-Cross-Domain-Policies
-      res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-
-      // X-Download-Options (IE)
-      res.setHeader('X-Download-Options', 'noopen');
-
-      // Remove X-Powered-By header
+  /**
+   * Remove sensitive headers from response
+   */
+  public static removeSensitiveHeaders() {
+    return (req: Request, res: Response, next: NextFunction) => {
       res.removeHeader('X-Powered-By');
+      res.removeHeader('Server');
+      next();
+    };
+  }
+
+  /**
+   * Add CORS security headers
+   */
+  public static corsSecurityHeaders(allowedOrigins: string[]) {
+    return (req: Request, res: Response, next: NextFunction) => {
+      const origin = req.headers.origin;
+
+      if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+        res.setHeader(
+          'Access-Control-Allow-Headers',
+          'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-API-Key',
+        );
+        res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+      }
+
+      // Handle preflight
+      if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+      }
 
       next();
-    } catch (error) {
-      logger.error('Error applying security headers:', error);
-      next(error);
-    }
-  };
-
-  /**
-   * Build HSTS header value
-   */
-  private buildHSTSHeader(config: NonNullable<SecurityHeadersConfig['hsts']>): string {
-    const parts = [`max-age=${config.maxAge || 31536000}`];
-
-    if (config.includeSubDomains) {
-      parts.push('includeSubDomains');
-    }
-
-    if (config.preload) {
-      parts.push('preload');
-    }
-
-    return parts.join('; ');
+    };
   }
 
   /**
-   * Build CSP header value
+   * Add Cache-Control headers for API responses
    */
-  private buildCSPHeader(directives: Record<string, string[]>): string {
-    return Object.entries(directives)
-      .map(([key, values]) => `${key} ${values.join(' ')}`)
-      .join('; ');
+  public static noCacheHeaders() {
+    return (req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      next();
+    };
   }
 
   /**
-   * Build Permissions-Policy header value
+   * Add security headers for static assets
    */
-  private buildPermissionsPolicyHeader(policies: Record<string, string[]>): string {
-    return Object.entries(policies)
-      .map(([feature, allowlist]) => {
-        if (allowlist.length === 0) {
-          return `${feature}=()`;
-        }
-        return `${feature}=(${allowlist.join(' ')})`;
-      })
-      .join(', ');
+  public static staticAssetHeaders(maxAge: number = 86400) {
+    return (req: Request, res: Response, next: NextFunction) => {
+      if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot)$/)) {
+        res.setHeader('Cache-Control', `public, max-age=${maxAge}, immutable`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+      }
+      next();
+    };
   }
 
   /**
-   * Update configuration
+   * Add security headers for sensitive operations
    */
-  public updateConfig(newConfig: Partial<SecurityHeadersConfig>): void {
-    this.config = { ...this.config, ...newConfig };
-    logger.info('Security headers configuration updated');
-  }
-
-  /**
-   * Get current configuration
-   */
-  public getConfig(): SecurityHeadersConfig {
-    return { ...this.config };
+  public static sensitiveOperationHeaders() {
+    return (req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      next();
+    };
   }
 }
-
-// Create singleton instance with default config
-export const securityHeadersMiddleware = new SecurityHeadersMiddleware();
-
-// Export the middleware function
-export const applySecurityHeaders = securityHeadersMiddleware.middleware;
-
