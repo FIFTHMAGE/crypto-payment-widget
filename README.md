@@ -209,8 +209,9 @@ API documentation is available at `http://localhost:3000/api-docs` when running 
 
 ## License
 
-MIT License - see LICENSE file for details
+Distributed under the MIT License.
 
 ## Support
+
 
 For support, please open an issue or contact the development team.
