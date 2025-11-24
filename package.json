@@ -1,20 +1,28 @@
 {
-  "name": "crypto-payment-widget",
+  "name": "crypto-payment-widget-monorepo",
   "version": "1.0.0",
   "description": "Drop-in crypto payment widget using WalletConnect SDK with smart contracts",
-  "main": "index.js",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
-    "build": "cd frontend && npm run build",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "deploy:base": "hardhat run scripts/deploy.js --network base",
-    "node": "hardhat node"
+    "node": "hardhat node",
+    "lint": "npm run lint --workspaces",
+    "format": "prettier --write \"**/*.{js,ts,tsx,json,md}\""
   },
   "keywords": [
     "crypto",
@@ -29,7 +37,8 @@
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@openzeppelin/contracts": "^5.4.0",
     "concurrently": "^8.2.2",
-    "hardhat": "^2.27.0"
+    "hardhat": "^2.27.0",
+    "prettier": "^3.1.1"
   },
   "dependencies": {
     "@openzeppelin/contracts-upgradeable": "^5.4.0",
