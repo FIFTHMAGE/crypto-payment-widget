@@ -1,4 +1,5 @@
 import { useAccount, useConnect, useDisconnect, useChainId } from 'wagmi'
+
 import { useUIStore } from '../../../store'
 
 export function useWalletConnection() {
