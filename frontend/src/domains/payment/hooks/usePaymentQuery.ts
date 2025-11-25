@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { paymentApiClient } from '../api'
+
 import type { Payment } from '../types'
+import { paymentApiClient } from '../api'
 
 export function usePaymentQuery(paymentId: string | undefined) {
   return useQuery({
