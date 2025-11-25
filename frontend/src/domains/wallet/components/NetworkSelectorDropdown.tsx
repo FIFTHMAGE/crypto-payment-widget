@@ -1,6 +1,7 @@
-import { Select } from '../../../components/ui'
 import { useSwitchChain, useChainId } from 'wagmi'
+
 import { CHAIN_IDS, NATIVE_TOKENS } from '../../../core/constants'
+import { Select } from '../../../components/ui'
 
 export function NetworkSelectorDropdown() {
   const chainId = useChainId()
