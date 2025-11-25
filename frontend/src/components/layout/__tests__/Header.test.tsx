@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Header } from '../Header'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Header', () => {
   it('renders header with title', () => {
