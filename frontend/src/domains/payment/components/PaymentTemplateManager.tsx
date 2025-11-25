@@ -1,7 +1,7 @@
 import { useState } from 'react'
+import type { PaymentTemplate } from '../types'
 import { Card, Button, Input } from '../../../components/ui'
 import { usePaymentStore } from '../store'
-import type { PaymentTemplate } from '../types'
 
 export function PaymentTemplateManager() {
   const { templates, addTemplate, deleteTemplate, incrementTemplateUsage } =
