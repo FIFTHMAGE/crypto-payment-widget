@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from '@jest/globals'
+
 import { sendEmail, sendWebhook, sendSlackNotification } from '../notificationService.js'
 
 describe('Notification Service', () => {
