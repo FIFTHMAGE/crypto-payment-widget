@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Alert } from '../Alert'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Alert', () => {
   it('should render alert message', () => {
