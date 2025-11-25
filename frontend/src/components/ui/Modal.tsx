@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react'
-import { Button } from './Button'
 
 interface ModalProps {
   isOpen: boolean
@@ -42,23 +41,25 @@ export const Modal: React.FC<ModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal Content */}
       <div
-        className={`relative bg-white rounded-2xl shadow-2xl ${sizeClasses[size]} w-full max-h-[90vh] overflow-hidden`}
+        className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl ${sizeClasses[size]} w-full max-h-[90vh] overflow-hidden border border-gray-200 dark:border-gray-700`}
       >
         {title && (
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              aria-label="Close modal"
             >
               <svg
                 className="w-6 h-6"
@@ -77,11 +78,12 @@ export const Modal: React.FC<ModalProps> = ({
           </div>
         )}
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)] text-gray-700 dark:text-gray-300">
           {children}
         </div>
       </div>
     </div>
   )
 }
+
 
