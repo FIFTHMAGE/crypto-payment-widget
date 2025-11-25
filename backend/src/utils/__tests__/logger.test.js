@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from '@jest/globals'
+
 import logger from '../logger.js'
 
 describe('Logger Utils', () => {
