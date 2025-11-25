@@ -1,5 +1,5 @@
-import { Card } from '../../../components/ui'
 import { AddressDisplay, AmountDisplay } from '../../../components/common'
+import { Card } from '../../../components/ui'
 import { useWalletBalance, useWalletConnection } from '../hooks'
 
 export function WalletCard() {
