@@ -1,8 +1,9 @@
-import { expect } from 'chai';
-import { ethers } from 'hardhat';
-import { MilestonePayment } from '../typechain-types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { ethers } from 'hardhat';
+import { expect } from 'chai';
 import { time } from '@nomicfoundation/hardhat-network-helpers';
+
+import { MilestonePayment } from '../typechain-types';
 
 describe('MilestonePayment', function () {
   let milestonePayment: MilestonePayment;
