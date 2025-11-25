@@ -1,5 +1,6 @@
-import logger from '../utils/logger.js'
 import axios from 'axios'
+
+import logger from '../utils/logger.js'
 
 /**
  * Webhook Service
