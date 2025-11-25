@@ -1,5 +1,6 @@
-import { createStorage } from 'wagmi'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
+import { createStorage } from 'wagmi'
+
 import { SUPPORTED_CHAINS } from '../lib/constants'
 
 // Read Project ID from environment variables
