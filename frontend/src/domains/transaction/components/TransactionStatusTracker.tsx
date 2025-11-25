@@ -1,5 +1,5 @@
-import { Card } from '../../../components/ui'
 import { AddressDisplay } from '../../../components/common'
+import { Card } from '../../../components/ui'
 import { useTransaction } from '../hooks'
 
 interface TransactionStatusTrackerProps {
