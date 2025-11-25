@@ -1,7 +1,7 @@
 import { useState } from 'react'
+import { AddressDisplay, AmountDisplay } from '../../../components/common'
 import { Card, Button, Input, Textarea } from '../../../components/ui'
 import { QRCodeGenerator } from './QRCodeGenerator'
-import { AddressDisplay, AmountDisplay } from '../../../components/common'
 
 interface InvoiceItem {
   description: string
