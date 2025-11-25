@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Textarea } from '../Textarea'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Textarea', () => {
   it('should render textarea', () => {
