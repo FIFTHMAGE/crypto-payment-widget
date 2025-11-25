@@ -1,5 +1,5 @@
-import { logger } from '../utils/logger.js'
 import { cacheService } from './cacheService.js'
+import { logger } from '../utils/logger.js'
 
 // Mock blockchain service (in production, use ethers.js or web3.js)
 class BlockchainService {
