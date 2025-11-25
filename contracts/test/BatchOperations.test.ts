@@ -1,7 +1,8 @@
-import { expect } from 'chai';
-import { ethers } from 'hardhat';
-import { BatchOperations } from '../typechain-types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
+import { ethers } from 'hardhat';
+import { expect } from 'chai';
+
+import { BatchOperations } from '../typechain-types';
 
 describe('BatchOperations', function () {
   let batchOperations: BatchOperations;
