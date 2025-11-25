@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
 import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi } from 'vitest'
+
 import { AddressDisplay } from '../AddressDisplay'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('AddressDisplay', () => {
   const address = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb9'
