@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { EmptyState } from '../EmptyState'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('EmptyState', () => {
   it('should render with title and description', () => {
