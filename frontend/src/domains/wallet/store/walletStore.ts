@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
+
 import type { WalletConnection, Chain, TokenBalance } from '../types'
 
 interface WalletState {
