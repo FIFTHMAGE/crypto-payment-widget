@@ -1,6 +1,7 @@
+import type {
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
-import type {
+
   Payment,
   PaymentTemplate,
   PaymentFilters,
