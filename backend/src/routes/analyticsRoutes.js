@@ -1,4 +1,5 @@
 import express from 'express'
+
 import { getAnalytics, getTransactionsByStatus } from '../controllers/analyticsController.js'
 
 const router = express.Router()
