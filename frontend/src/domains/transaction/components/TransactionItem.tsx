@@ -1,5 +1,5 @@
-import { AddressDisplay, AmountDisplay } from '../../../components/common'
 import type { Transaction } from '../types'
+import { AddressDisplay, AmountDisplay } from '../../../components/common'
 
 interface TransactionItemProps {
   transaction: Transaction
