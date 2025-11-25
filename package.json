@@ -21,8 +21,11 @@
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "deploy:base": "hardhat run scripts/deploy.js --network base",
     "node": "hardhat node",
-    "lint": "npm run lint --workspaces",
-    "format": "prettier --write \"**/*.{js,ts,tsx,json,md}\""
+    "lint": "eslint . --ext .ts,.js",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "type-check": "tsc --noEmit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [
     "crypto",
