@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
+import { useQuery } from '@tanstack/react-query'
+
 import { walletApiClient } from '../api'
 
 export function useWalletBalance() {
