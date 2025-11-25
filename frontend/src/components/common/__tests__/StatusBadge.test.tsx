@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { StatusBadge } from '../StatusBadge'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('StatusBadge', () => {
   it('renders pending status', () => {
