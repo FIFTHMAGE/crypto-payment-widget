@@ -1,6 +1,6 @@
 import React from 'react'
-import { Badge } from '../ui'
 import type { PaymentStatus } from '../../lib/types'
+import { Badge } from '../ui'
 
 interface StatusBadgeProps {
   status: PaymentStatus
