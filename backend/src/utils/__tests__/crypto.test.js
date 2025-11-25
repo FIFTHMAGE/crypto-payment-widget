@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals'
+
 import { hash, compare, encrypt, decrypt, generateToken } from '../crypto.js'
 
 describe('Crypto Utils', () => {
