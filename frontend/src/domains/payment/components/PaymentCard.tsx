@@ -1,6 +1,6 @@
-import { Card } from '../../../components/ui'
-import { AddressDisplay, AmountDisplay } from '../../../components/common'
 import type { Payment } from '../types'
+import { AddressDisplay, AmountDisplay } from '../../../components/common'
+import { Card } from '../../../components/ui'
 
 interface PaymentCardProps {
   payment: Payment
