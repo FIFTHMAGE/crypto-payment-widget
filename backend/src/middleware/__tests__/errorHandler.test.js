@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from '@jest/globals'
+
 import errorHandler from '../errorHandler.js'
 
 describe('Error Handler Middleware', () => {
