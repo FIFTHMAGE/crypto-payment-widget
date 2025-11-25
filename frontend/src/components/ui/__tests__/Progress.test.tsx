@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Progress } from '../Progress'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Progress', () => {
   it('should render progress bar', () => {
