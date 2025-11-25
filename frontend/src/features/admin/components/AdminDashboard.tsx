@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Button, Tabs } from '../../../components/ui'
 import { AmountDisplay } from '../../../components/common'
+import { Card, Button, Tabs } from '../../../components/ui'
 
 export const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview')
