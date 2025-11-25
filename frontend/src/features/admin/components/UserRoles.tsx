@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Card, Button, Input, Select } from '../../../components/ui'
 import { AddressDisplay } from '../../../components/common'
+import { Card, Button, Input, Select } from '../../../components/ui'
 import { useUIStore } from '../../../store'
 
 interface User {
