@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from '@jest/globals'
+
 import securityHeaders from '../securityHeaders.js'
 
 describe('Security Headers Middleware', () => {
