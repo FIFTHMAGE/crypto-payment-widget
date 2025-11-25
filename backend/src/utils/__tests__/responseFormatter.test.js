@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals'
+
 import { success, error, paginated } from '../responseFormatter.js'
 
 describe('Response Formatter Utils', () => {
