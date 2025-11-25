@@ -1,8 +1,10 @@
 import React from 'react'
+
 import type { Address } from 'viem'
+
+import { Badge } from '../ui'
 import { formatAddress } from '../../lib/utils'
 import { useCopyToClipboard } from '../../lib/hooks'
-import { Badge } from '../ui'
 
 interface AddressDisplayProps {
   address: Address
