@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Spinner } from '../Spinner'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Spinner', () => {
   it('should render spinner', () => {
