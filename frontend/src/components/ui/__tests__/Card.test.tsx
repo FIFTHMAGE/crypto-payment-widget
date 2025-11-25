@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Card } from '../Card'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Card', () => {
   it('should render children', () => {
