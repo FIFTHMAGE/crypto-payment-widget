@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from '@jest/globals'
+
 import rateLimiter from '../rateLimiter.js'
 
 describe('Rate Limiter Middleware', () => {
