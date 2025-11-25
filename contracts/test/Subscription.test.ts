@@ -1,8 +1,9 @@
-import { expect } from 'chai';
-import { ethers } from 'hardhat';
-import { SubscriptionPayment } from '../typechain-types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { ethers } from 'hardhat';
+import { expect } from 'chai';
 import { time } from '@nomicfoundation/hardhat-network-helpers';
+
+import { SubscriptionPayment } from '../typechain-types';
 
 describe('SubscriptionPayment', function () {
   let subscription: SubscriptionPayment;
