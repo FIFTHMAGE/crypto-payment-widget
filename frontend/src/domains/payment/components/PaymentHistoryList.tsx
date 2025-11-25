@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Card, Button, Select } from '../../../components/ui'
 import { PaymentCard } from './PaymentCard'
-import { usePaymentsQuery } from '../hooks'
 import { usePaymentStore } from '../store'
+import { usePaymentsQuery } from '../hooks'
 
 export function PaymentHistoryList() {
   const { filters, setFilters, currentPage, setPage, pageSize } = usePaymentStore()
