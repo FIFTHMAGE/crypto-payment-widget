@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Card, Button, Input, Select } from '../../../components/ui'
-import { validateEthereumAddress, validateAmount } from '../../../core/validation'
+
 import { useAccount } from 'wagmi'
 import { useWriteContract } from 'wagmi'
+
 import PaymentProcessorABI from '../../../contracts/PaymentProcessor.json'
+import { Card, Button, Input, Select } from '../../../components/ui'
 import { config } from '../../../core/config'
+import { validateEthereumAddress, validateAmount } from '../../../core/validation'
 
 interface SmartContractPaymentFormProps {
   onSuccess?: (txHash: string) => void
