@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Footer } from '../Footer'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Footer', () => {
   it('renders footer', () => {
