@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Button } from '../Button'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Button', () => {
   it('should render with children', () => {
