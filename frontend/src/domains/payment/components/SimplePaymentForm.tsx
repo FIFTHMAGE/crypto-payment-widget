@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Card, Button, Input } from '../../../components/ui'
-import { validateEthereumAddress, validateAmount } from '../../../core/validation'
-import { usePaymentMutation } from '../hooks'
+
 import { useAccount } from 'wagmi'
+
+import { Card, Button, Input } from '../../../components/ui'
+import { usePaymentMutation } from '../hooks'
+import { validateEthereumAddress, validateAmount } from '../../../core/validation'
 
 interface SimplePaymentFormProps {
   onSuccess?: (txHash: string) => void
