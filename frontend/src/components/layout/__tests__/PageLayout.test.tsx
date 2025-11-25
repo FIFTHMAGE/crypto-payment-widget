@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { PageLayout } from '../PageLayout'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('PageLayout', () => {
   it('renders children', () => {
