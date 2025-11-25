@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Badge } from '../Badge'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Badge', () => {
   it('should render badge with text', () => {
