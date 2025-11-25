@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Tabs } from '../Tabs'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Tabs', () => {
   const tabs = [
