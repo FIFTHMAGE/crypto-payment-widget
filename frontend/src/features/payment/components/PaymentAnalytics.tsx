@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { Card } from '../../../components/ui'
 import { AmountDisplay } from '../../../components/common'
+import { Card } from '../../../components/ui'
 import { usePaymentStore } from '../../../store'
 
 export const PaymentAnalytics = () => {
