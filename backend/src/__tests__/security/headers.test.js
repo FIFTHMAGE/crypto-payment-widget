@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from '@jest/globals'
-import request from 'supertest'
 import express from 'express'
+import request from 'supertest'
+import { describe, it, expect, beforeAll } from '@jest/globals'
+
 import securityHeaders from '../../middleware/securityHeaders.js'
 
 describe('Security Headers Tests', () => {
