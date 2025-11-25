@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from '@jest/globals'
-import { validateRequest } from '../validateRequest.js'
 import Joi from 'joi'
+import { describe, it, expect, vi, beforeEach } from '@jest/globals'
+
+import { validateRequest } from '../validateRequest.js'
 
 describe('Validate Request Middleware', () => {
   let req, res, next
