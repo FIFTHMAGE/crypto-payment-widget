@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals'
+
 import { isValidAddress, isValidTxHash, isValidAmount, sanitizeInput } from '../validation.js'
 
 describe('Validation Utils', () => {
