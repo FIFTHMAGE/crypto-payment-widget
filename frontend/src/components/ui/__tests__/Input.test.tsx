@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Input } from '../Input'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Input', () => {
   it('should render input field', () => {
