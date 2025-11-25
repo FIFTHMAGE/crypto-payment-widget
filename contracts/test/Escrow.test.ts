@@ -1,7 +1,8 @@
-import { expect } from 'chai';
-import { ethers } from 'hardhat';
-import { Escrow } from '../typechain-types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
+import { ethers } from 'hardhat';
+import { expect } from 'chai';
+
+import { Escrow } from '../typechain-types';
 
 describe('Escrow', function () {
   let escrow: Escrow;
