@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { transactionApiClient } from '../api'
+
 import type { TransactionListParams, TransactionSearchParams } from '../types'
+import { transactionApiClient } from '../api'
 
 export function useTransaction(txHash: string | undefined) {
   return useQuery({
