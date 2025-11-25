@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render } from '../../../test/utils/test-utils'
+
 import { Skeleton } from '../Skeleton'
+import { render } from '../../../test/utils/test-utils'
 
 describe('Skeleton', () => {
   it('should render skeleton loader', () => {
