@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { AmountDisplay } from '../AmountDisplay'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('AmountDisplay', () => {
   it('displays formatted amount', () => {
