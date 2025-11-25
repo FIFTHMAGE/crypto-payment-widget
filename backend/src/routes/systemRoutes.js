@@ -1,4 +1,5 @@
 import express from 'express'
+
 import { getSystemInfo, clearCache, getLogs } from '../controllers/systemController.js'
 
 const router = express.Router()
