@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from '@jest/globals'
+
 import * as analyticsController from '../analyticsController.js'
 
 describe('Analytics Controller', () => {
