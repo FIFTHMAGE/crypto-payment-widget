@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '../../../test/utils/test-utils'
+
 import { Modal } from '../Modal'
+import { render, screen } from '../../../test/utils/test-utils'
 
 describe('Modal', () => {
   it('should render when open', () => {
