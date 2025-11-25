@@ -1,5 +1,7 @@
-import { apiClient } from '../../../core/api/client'
 import type {
+
+import { apiClient } from '../../../core/api/client'
+
   WalletBalance,
   TokenBalance,
   WalletTransaction,
