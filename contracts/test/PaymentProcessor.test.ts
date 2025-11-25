@@ -1,7 +1,8 @@
-import { expect } from 'chai';
-import { ethers } from 'hardhat';
-import { PaymentProcessor } from '../typechain-types';
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
+import { ethers } from 'hardhat';
+import { expect } from 'chai';
+
+import { PaymentProcessor } from '../typechain-types';
 
 describe('PaymentProcessor', function () {
   let paymentProcessor: PaymentProcessor;
