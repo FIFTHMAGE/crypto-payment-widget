@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from '@jest/globals'
-import request from 'supertest'
 import express from 'express'
+import request from 'supertest'
+import { describe, it, expect, beforeAll } from '@jest/globals'
+
 import apiRoutes from '../../routes/index.js'
 
 describe('Performance Load Tests', () => {
