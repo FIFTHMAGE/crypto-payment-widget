@@ -1,74 +1,222 @@
 /**
- * Crypto utilities - Encryption and hashing
- * @module utils
+ * Cryptographic utilities
  */
-
 import crypto from 'crypto';
 
-export class CryptoUtil {
-  private static readonly ALGORITHM = 'aes-256-gcm';
-  private static readonly KEY_LENGTH = 32;
-  private static readonly IV_LENGTH = 16;
-  private static readonly SALT_LENGTH = 64;
-  private static readonly TAG_LENGTH = 16;
+/**
+ * Generate a random API key
+ */
+export const generateApiKey = (bytes = 32): string => {
+  return crypto.randomBytes(bytes).toString('hex');
+};
 
-  static generateRandomString(length: number = 32): string {
-    return crypto.randomBytes(length).toString('hex');
+/**
+ * Generate a prefixed API key (e.g., sk_live_...)
+ */
+export const generatePrefixedApiKey = (prefix = 'sk', environment = 'live'): string => {
+  const key = crypto.randomBytes(24).toString('base64url');
+  return `${prefix}_${environment}_${key}`;
+};
+
+/**
+ * Hash a password using SHA-256 (use bcrypt in production)
+ */
+export const hashPassword = (password: string): string => {
+  return crypto.createHash('sha256').update(password).digest('hex');
+};
+
+/**
+ * Hash data using SHA-256
+ */
+export const sha256 = (data: string): string => {
+  return crypto.createHash('sha256').update(data).digest('hex');
+};
+
+/**
+ * Hash data using SHA-512
+ */
+export const sha512 = (data: string): string => {
+  return crypto.createHash('sha512').update(data).digest('hex');
+};
+
+/**
+ * Verify an RSA signature
+ */
+export const verifySignature = (
+  message: string,
+  signature: string,
+  publicKey: string
+): boolean => {
+  try {
+    const verify = crypto.createVerify('RSA-SHA256');
+    verify.update(message);
+    return verify.verify(publicKey, signature, 'hex');
+  } catch {
+    return false;
   }
+};
 
-  static hash(data: string, algorithm: string = 'sha256'): string {
-    return crypto.createHash(algorithm).update(data).digest('hex');
-  }
+/**
+ * Create an RSA signature
+ */
+export const createSignature = (
+  message: string,
+  privateKey: string
+): string => {
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(message);
+  return sign.sign(privateKey, 'hex');
+};
 
-  static hashPassword(password: string, salt?: string): { hash: string; salt: string } {
-    const finalSalt = salt || crypto.randomBytes(this.SALT_LENGTH).toString('hex');
-    const hash = crypto.pbkdf2Sync(password, finalSalt, 10000, 64, 'sha512').toString('hex');
-    return { hash, salt: finalSalt };
-  }
+/**
+ * Generate a random nonce
+ */
+export const generateNonce = (bytes = 16): string => {
+  return crypto.randomBytes(bytes).toString('hex');
+};
 
-  static verifyPassword(password: string, hash: string, salt: string): boolean {
-    const { hash: computedHash } = this.hashPassword(password, salt);
-    return computedHash === hash;
-  }
+/**
+ * Generate a UUID v4
+ */
+export const generateUUID = (): string => {
+  return crypto.randomUUID();
+};
 
-  static encrypt(text: string, secretKey: string): string {
-    const key = crypto.scryptSync(secretKey, 'salt', this.KEY_LENGTH);
-    const iv = crypto.randomBytes(this.IV_LENGTH);
-    const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv);
+/**
+ * Create an HMAC signature
+ */
+export const createHmac = (
+  data: unknown,
+  secret: string,
+  algorithm: 'sha256' | 'sha512' = 'sha256'
+): string => {
+  const stringData = typeof data === 'string' ? data : JSON.stringify(data);
+  return crypto.createHmac(algorithm, secret).update(stringData).digest('hex');
+};
 
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
+/**
+ * Verify an HMAC signature (timing-safe)
+ */
+export const verifyHmac = (
+  data: unknown,
+  signature: string,
+  secret: string,
+  algorithm: 'sha256' | 'sha512' = 'sha256'
+): boolean => {
+  try {
+    const expected = createHmac(data, secret, algorithm);
+    const sigBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expected, 'hex');
 
-    const tag = cipher.getAuthTag();
-    return `${iv.toString('hex')}:${encrypted}:${tag.toString('hex')}`;
-  }
-
-  static decrypt(encryptedText: string, secretKey: string): string {
-    const parts = encryptedText.split(':');
-    if (parts.length !== 3) {
-      throw new Error('Invalid encrypted text format');
+    if (sigBuffer.length !== expectedBuffer.length) {
+      return false;
     }
 
-    const iv = Buffer.from(parts[0], 'hex');
-    const encrypted = parts[1];
-    const tag = Buffer.from(parts[2], 'hex');
-
-    const key = crypto.scryptSync(secretKey, 'salt', this.KEY_LENGTH);
-    const decipher = crypto.createDecipheriv(this.ALGORITHM, key, iv);
-    decipher.setAuthTag(tag);
-
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-
-    return decrypted;
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+  } catch {
+    return false;
   }
+};
 
-  static hmac(data: string, secret: string, algorithm: string = 'sha256'): string {
-    return crypto.createHmac(algorithm, secret).update(data).digest('hex');
-  }
+/**
+ * Encrypt data using AES-256-GCM
+ */
+export const encrypt = (
+  data: string,
+  key: string
+): { encrypted: string; iv: string; tag: string } => {
+  const iv = crypto.randomBytes(12);
+  const keyBuffer = Buffer.from(key, 'hex').subarray(0, 32);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
 
-  static verifyHmac(data: string, signature: string, secret: string): boolean {
-    const computedSignature = this.hmac(data, secret);
-    return crypto.timingSafeEqual(Buffer.from(computedSignature), Buffer.from(signature));
+  let encrypted = cipher.update(data, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  return {
+    encrypted,
+    iv: iv.toString('hex'),
+    tag: cipher.getAuthTag().toString('hex'),
+  };
+};
+
+/**
+ * Decrypt data using AES-256-GCM
+ */
+export const decrypt = (
+  encrypted: string,
+  key: string,
+  iv: string,
+  tag: string
+): string => {
+  const keyBuffer = Buffer.from(key, 'hex').subarray(0, 32);
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    keyBuffer,
+    Buffer.from(iv, 'hex')
+  );
+
+  decipher.setAuthTag(Buffer.from(tag, 'hex'));
+
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return decrypted;
+};
+
+/**
+ * Generate a random encryption key
+ */
+export const generateEncryptionKey = (bytes = 32): string => {
+  return crypto.randomBytes(bytes).toString('hex');
+};
+
+/**
+ * Derive a key from a password using PBKDF2
+ */
+export const deriveKey = (
+  password: string,
+  salt: string,
+  iterations = 100000,
+  keyLength = 32
+): string => {
+  return crypto
+    .pbkdf2Sync(password, salt, iterations, keyLength, 'sha256')
+    .toString('hex');
+};
+
+/**
+ * Generate a random salt
+ */
+export const generateSalt = (bytes = 16): string => {
+  return crypto.randomBytes(bytes).toString('hex');
+};
+
+/**
+ * Constant-time string comparison
+ */
+export const constantTimeCompare = (a: string, b: string): boolean => {
+  if (a.length !== b.length) {
+    return false;
   }
-}
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+};
+
+export default {
+  generateApiKey,
+  generatePrefixedApiKey,
+  hashPassword,
+  sha256,
+  sha512,
+  verifySignature,
+  createSignature,
+  generateNonce,
+  generateUUID,
+  createHmac,
+  verifyHmac,
+  encrypt,
+  decrypt,
+  generateEncryptionKey,
+  deriveKey,
+  generateSalt,
+  constantTimeCompare,
+};
