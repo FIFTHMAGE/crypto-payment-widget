@@ -1,130 +1,150 @@
+import { config } from '../config';
+
 /**
- * Logger - Centralized logging utility
- * @module utils
+ * Logger utility with colored console output
  */
 
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+interface LogMeta {
+  [key: string]: unknown;
 }
 
-export interface LogEntry {
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-  context?: string;
-  metadata?: Record<string, any>;
-  error?: Error;
-}
+const LEVELS: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
 
-export class Logger {
-  private context: string;
-  private minLevel: LogLevel;
+const COLORS: Record<LogLevel | 'reset', string> = {
+  error: '\x1b[31m', // Red
+  warn: '\x1b[33m', // Yellow
+  info: '\x1b[36m', // Cyan
+  debug: '\x1b[35m', // Magenta
+  reset: '\x1b[0m',
+};
 
-  constructor(context: string = 'App', minLevel: LogLevel = LogLevel.INFO) {
-    this.context = context;
-    this.minLevel = minLevel;
+const LEVEL_LABELS: Record<LogLevel, string> = {
+  error: 'ERROR',
+  warn: 'WARN',
+  info: 'INFO',
+  debug: 'DEBUG',
+};
+
+class Logger {
+  private level: number;
+  private silent: boolean;
+
+  constructor(level: LogLevel = 'info', silent = false) {
+    this.level = LEVELS[level] ?? LEVELS.info;
+    this.silent = silent;
   }
 
   /**
-   * Debug log
+   * Set the log level
    */
-  debug(message: string, metadata?: Record<string, any>): void {
-    this.log(LogLevel.DEBUG, message, metadata);
+  setLevel(level: LogLevel): void {
+    this.level = LEVELS[level] ?? LEVELS.info;
   }
 
   /**
-   * Info log
+   * Enable/disable silent mode
    */
-  info(message: string, metadata?: Record<string, any>): void {
-    this.log(LogLevel.INFO, message, metadata);
+  setSilent(silent: boolean): void {
+    this.silent = silent;
   }
 
   /**
-   * Warning log
+   * Log a message at a specific level
    */
-  warn(message: string, metadata?: Record<string, any>): void {
-    this.log(LogLevel.WARN, message, metadata);
-  }
-
-  /**
-   * Error log
-   */
-  error(message: string, error?: Error, metadata?: Record<string, any>): void {
-    this.log(LogLevel.ERROR, message, { ...metadata, error });
-  }
-
-  /**
-   * Core logging method
-   */
-  private log(level: LogLevel, message: string, metadata?: Record<string, any>): void {
-    if (!this.shouldLog(level)) {
+  private log(level: LogLevel, message: unknown, meta?: LogMeta): void {
+    if (this.silent || LEVELS[level] > this.level) {
       return;
     }
 
-    const entry: LogEntry = {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      context: this.context,
-      metadata,
-    };
+    const timestamp = new Date().toISOString();
+    const color = COLORS[level];
+    const reset = COLORS.reset;
+    const label = LEVEL_LABELS[level];
 
-    this.output(entry);
+    const formattedMessage =
+      typeof message === 'object' ? JSON.stringify(message, null, 2) : String(message);
+
+    const metaString =
+      meta && Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
+
+    // Use appropriate console method
+    const consoleMethod = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+
+    consoleMethod(`${color}[${timestamp}] [${label}]${reset} ${formattedMessage}${metaString}`);
   }
 
   /**
-   * Check if should log based on level
+   * Log an error message
    */
-  private shouldLog(level: LogLevel): boolean {
-    const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
-    const currentLevelIndex = levels.indexOf(this.minLevel);
-    const logLevelIndex = levels.indexOf(level);
-    return logLevelIndex >= currentLevelIndex;
+  error(message: unknown, meta?: LogMeta): void {
+    this.log('error', message, meta);
   }
 
   /**
-   * Output log entry
+   * Log a warning message
    */
-  private output(entry: LogEntry): void {
-    const formatted = this.format(entry);
-
-    switch (entry.level) {
-      case LogLevel.DEBUG:
-        console.debug(formatted);
-        break;
-      case LogLevel.INFO:
-        console.info(formatted);
-        break;
-      case LogLevel.WARN:
-        console.warn(formatted);
-        break;
-      case LogLevel.ERROR:
-        console.error(formatted);
-        break;
-    }
+  warn(message: unknown, meta?: LogMeta): void {
+    this.log('warn', message, meta);
   }
 
   /**
-   * Format log entry
+   * Log an info message
    */
-  private format(entry: LogEntry): string {
-    const parts = [
-      `[${entry.timestamp}]`,
-      `[${entry.level.toUpperCase()}]`,
-      `[${entry.context}]`,
-      entry.message,
-    ];
+  info(message: unknown, meta?: LogMeta): void {
+    this.log('info', message, meta);
+  }
 
-    if (entry.metadata) {
-      parts.push(JSON.stringify(entry.metadata));
-    }
+  /**
+   * Log a debug message
+   */
+  debug(message: unknown, meta?: LogMeta): void {
+    this.log('debug', message, meta);
+  }
 
-    return parts.join(' ');
+  /**
+   * Create a child logger with a prefix
+   */
+  child(prefix: string): ChildLogger {
+    return new ChildLogger(this, prefix);
   }
 }
 
-export const logger = new Logger('CryptoPaymentWidget');
+/**
+ * Child logger with a prefix
+ */
+class ChildLogger {
+  constructor(
+    private parent: Logger,
+    private prefix: string
+  ) {}
 
+  error(message: unknown, meta?: LogMeta): void {
+    this.parent.error(`[${this.prefix}] ${message}`, meta);
+  }
+
+  warn(message: unknown, meta?: LogMeta): void {
+    this.parent.warn(`[${this.prefix}] ${message}`, meta);
+  }
+
+  info(message: unknown, meta?: LogMeta): void {
+    this.parent.info(`[${this.prefix}] ${message}`, meta);
+  }
+
+  debug(message: unknown, meta?: LogMeta): void {
+    this.parent.debug(`[${this.prefix}] ${message}`, meta);
+  }
+}
+
+// Get log level from config or environment
+const logLevel = (config?.logLevel as LogLevel) || (process.env.LOG_LEVEL as LogLevel) || 'info';
+
+export const logger = new Logger(logLevel);
+
+export default logger;
